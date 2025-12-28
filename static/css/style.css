@@ -1,0 +1,102 @@
+:root {
+    --scada-bg: #121212;
+    --scada-panel: #1e1e1e;
+    --scada-border: #333;
+    --scada-accent: #ffc107;
+}
+
+body {
+    background-color: var(--scada-bg);
+    color: #e0e0e0;
+    font-family: 'Roboto', sans-serif;
+    overflow: hidden; /* Prevent full page scroll, handle in containers */
+}
+
+.scada-font {
+    font-family: 'Orbitron', sans-serif;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: var(--scada-bg); 
+}
+::-webkit-scrollbar-thumb {
+    background: #444; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #555; 
+}
+
+/* Sidebar Plant Item */
+.plant-item {
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 3px solid transparent;
+}
+.plant-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.plant-item.active {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left-color: var(--scada-accent);
+}
+
+/* Pulse Animation for Status */
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+}
+.pulse {
+    animation: pulse-green 2s infinite;
+}
+
+/* Solar Array Visualization */
+.solar-array {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    perspective: 300px;
+    transform: rotateX(20deg);
+    margin-top: 40px;
+}
+.panel {
+    height: 40px;
+    background: linear-gradient(135deg, #1a237e, #0d47a1);
+    border: 1px solid #444;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    position: relative;
+    overflow: hidden;
+}
+.panel::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+}
+
+.sun-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    background: radial-gradient(circle, #ffeb3b 0%, rgba(255,235,59,0) 70%);
+    border-radius: 50%;
+    box-shadow: 0 0 20px #ffeb3b;
+    transition: opacity 0.5s;
+}
+
+/* Map Customization */
+.leaflet-container {
+    background: #000 !important;
+}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background: var(--scada-panel);
+    color: #fff;
+    border: 1px solid var(--scada-border);
+}
