@@ -215,6 +215,16 @@ async function fetchPlantDetail() {
         document.getElementById('detail-temp').innerText = `${data.temperature_c.toFixed(1)} °C`;
         
         // New fields
+        if (document.getElementById('detail-pf')) {
+            document.getElementById('detail-pf').innerText = `${data.power_factor.toFixed(2)}`;
+        }
+        if (document.getElementById('detail-apparent')) {
+            document.getElementById('detail-apparent').innerText = `${data.apparent_power_kva.toFixed(2)} kVA`;
+        }
+        if (document.getElementById('detail-reactive')) {
+            document.getElementById('detail-reactive').innerText = `${data.reactive_power_kvar.toFixed(2)} kvar`;
+        }
+
         if (document.getElementById('detail-efficiency')) {
             document.getElementById('detail-efficiency').innerText = `${data.efficiency_percent.toFixed(1)} %`;
         }

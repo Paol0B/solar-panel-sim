@@ -28,6 +28,9 @@ pub struct PlantData {
     pub daily_energy_kwh: f64,
     pub weather_code: u16,
     pub is_day: bool,
+    pub power_factor: f64,
+    pub reactive_power_kvar: f64,
+    pub apparent_power_kva: f64,
 }
 
 impl Default for PlantData {
@@ -43,6 +46,9 @@ impl Default for PlantData {
             daily_energy_kwh: 0.0,
             weather_code: 0,
             is_day: true,
+            power_factor: 1.0,
+            reactive_power_kvar: 0.0,
+            apparent_power_kva: 0.0,
         }
     }
 }
