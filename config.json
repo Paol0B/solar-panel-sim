@@ -5,6 +5,7 @@
   "modbus": {
     "port": 5020
   },
+  "offline_mode": true,
   "plants": [
     {
       "id": "plant_1",

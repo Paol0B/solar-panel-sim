@@ -1,18 +1,30 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::models::power::PlantData;
 
 #[derive(Clone, Debug)]
 pub struct AppState {
     /// Map of plant_id to current plant data
     pub plant_data: Arc<RwLock<HashMap<String, PlantData>>>,
+    /// Offline mode flag — toggled at runtime via API
+    pub offline_mode: Arc<AtomicBool>,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(offline_mode_default: bool) -> Self {
         Self {
             plant_data: Arc::new(RwLock::new(HashMap::new())),
+            offline_mode: Arc::new(AtomicBool::new(offline_mode_default)),
         }
+    }
+
+    pub fn is_offline(&self) -> bool {
+        self.offline_mode.load(Ordering::Relaxed)
+    }
+
+    pub fn set_offline(&self, value: bool) {
+        self.offline_mode.store(value, Ordering::Relaxed);
     }
 
     pub fn set_data(&self, plant_id: &str, power: f64, temperature: f64, nominal_power: f64, weather_code: u16, is_day: bool) {

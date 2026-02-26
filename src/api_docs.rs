@@ -9,7 +9,9 @@ use crate::config;
         power_controller::list_plants,
         power_controller::get_plant_power,
         power_controller::get_global_power,
-        power_controller::get_modbus_info
+        power_controller::get_modbus_info,
+        power_controller::get_offline_mode,
+        power_controller::set_offline_mode
     ),
     components(
         schemas(

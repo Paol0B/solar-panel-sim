@@ -23,9 +23,72 @@
         <span class="nav-meta"><i class="fas fa-network-wired me-1"></i>Modbus <span class="text-info" id="nav-modbus-port">:5020</span></span>
         <span class="nav-meta"><i class="fas fa-globe me-1"></i>API <span class="text-info">:3000</span></span>
         <div class="nav-divider"></div>
+        <!-- Offline mode badge (visible only when active) -->
+        <span id="offline-badge" class="badge bg-warning text-dark d-none" title="Offline mode: solar geometry algorithm active">
+            <i class="fas fa-satellite-dish me-1"></i>OFFLINE
+        </span>
+        <!-- Settings button -->
+        <button class="btn btn-sm btn-outline-secondary" onclick="openSettings()" title="Settings">
+            <i class="fas fa-cog"></i>
+        </button>
         <span id="clock" class="font-monospace text-success small fw-bold">--:--:--</span>
     </div>
 </nav>
+
+<!-- ===== SETTINGS MODAL ===== -->
+<div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark border border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title scada-font text-warning" id="settingsModalLabel">
+                    <i class="fas fa-cog me-2"></i>Settings
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+
+                <!-- Offline Mode tile -->
+                <div class="scada-card mb-3">
+                    <div class="scada-card-title mb-3">
+                        <i class="fas fa-satellite-dish me-2 text-warning"></i>Data Source
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                        <div>
+                            <div class="fw-bold text-light mb-1">Offline Mode</div>
+                            <div class="text-muted small">
+                                When enabled, the server <strong>does not contact</strong> the Open-Meteo weather API.<br>
+                                Instead, production is estimated using an advanced solar-geometry &amp; climatological algorithm:
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mt-1">
+                            <input class="form-check-input" type="checkbox" id="offlineModeToggle"
+                                   role="switch" onchange="toggleOfflineMode(this.checked)" style="width:3em;height:1.6em;cursor:pointer;">
+                        </div>
+                    </div>
+
+                    <!-- Algorithm description -->
+                    <ul class="text-muted small mb-0 ps-3" id="offline-algo-detail">
+                        <li><strong>Solar geometry</strong> — Spencer declination, Equation of Time, hour angle, elevation &amp; azimuth per plant location</li>
+                        <li><strong>Extraterrestrial irradiance</strong> — eccentricity-corrected solar constant (E₀)</li>
+                        <li><strong>Clear-sky model</strong> — Bird &amp; Hulstrom (Rayleigh + aerosol + ozone + water vapour transmittances)</li>
+                        <li><strong>POA irradiance</strong> — transposition to optimal-tilt surface with beam, isotropic diffuse &amp; ground-reflected components</li>
+                        <li><strong>Cloud attenuation</strong> — latitude-zone climatological baseline + seasonal phase + deterministic daily variation seeded by location &amp; day-of-year</li>
+                        <li><strong>Ambient temperature</strong> — latitude × season × diurnal cycle model</li>
+                        <li><strong>Cell temperature</strong> — Faiman (2008) U₀+U₁·wind model</li>
+                        <li><strong>Power output</strong> — P = P_nom × (G_POA/1000) × [1 + α·(T_cell − 25°C)]</li>
+                    </ul>
+
+                    <div id="offline-status-line" class="mt-3 small font-monospace"></div>
+                </div>
+
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- App Shell -->
 <div class="app-shell">
@@ -379,7 +442,7 @@
                                         <tr><td class="text-muted">Timezone</td><td class="font-monospace" id="info-tz">—</td></tr>
                                         <tr><td class="text-muted">Nominal Power</td><td class="font-monospace" id="info-nominal">—</td></tr>
                                         <tr><td class="text-muted">Update Interval</td><td class="font-monospace">5 seconds</td></tr>
-                                        <tr><td class="text-muted">Weather Source</td><td class="font-monospace text-info">Open-Meteo API</td></tr>
+                                        <tr><td class="text-muted">Weather Source</td><td class="font-monospace" id="info-weather-source"><span class="text-info">Open-Meteo API</span></td></tr>
                                     </tbody>
                                 </table>
                             </div>

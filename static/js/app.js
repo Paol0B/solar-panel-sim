@@ -549,3 +549,84 @@ function fmtPower(kw) {
     if (kw >= 1000) return `${(kw / 1000).toFixed(2)} MW`;
     return `${kw.toFixed(2)} kW`;
 }
+
+// ============================================================
+//  SETTINGS — OFFLINE MODE
+// ============================================================
+let _settingsModal = null;
+
+function openSettings() {
+    if (!_settingsModal) {
+        _settingsModal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    }
+    // Fetch current state from API, then open
+    fetch('/api/settings/offline-mode')
+        .then(r => r.json())
+        .then(data => {
+            const toggle = document.getElementById('offlineModeToggle');
+            if (toggle) toggle.checked = !!data.offline_mode;
+            updateOfflineStatusLine(data.offline_mode);
+        })
+        .catch(() => {})
+        .finally(() => _settingsModal.show());
+}
+
+async function toggleOfflineMode(enabled) {
+    try {
+        const res = await fetch('/api/settings/offline-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        const data = await res.json();
+        updateOfflineBadge(data.offline_mode);
+        updateOfflineStatusLine(data.offline_mode);
+        updateWeatherSourceBadge(data.offline_mode);
+    } catch (e) {
+        console.error('toggleOfflineMode:', e);
+    }
+}
+
+function updateOfflineBadge(isOffline) {
+    const badge = document.getElementById('offline-badge');
+    if (!badge) return;
+    badge.classList.toggle('d-none', !isOffline);
+}
+
+function updateOfflineStatusLine(isOffline) {
+    const el = document.getElementById('offline-status-line');
+    if (!el) return;
+    if (isOffline) {
+        el.innerHTML = '<span class="text-warning"><i class="fas fa-satellite-dish me-1"></i>'
+            + 'Status: <strong>OFFLINE MODE ACTIVE</strong> — solar geometry algorithm running</span>';
+    } else {
+        el.innerHTML = '<span class="text-success"><i class="fas fa-wifi me-1"></i>'
+            + 'Status: <strong>ONLINE MODE ACTIVE</strong> — fetching from Open-Meteo API</span>';
+    }
+}
+
+function updateWeatherSourceBadge(isOffline) {
+    const el = document.getElementById('info-weather-source');
+    if (!el) return;
+    if (isOffline) {
+        el.innerHTML = '<span class="text-warning"><i class="fas fa-satellite-dish me-1"></i> Solar Geometry Algorithm (offline)</span>';
+    } else {
+        el.innerHTML = '<span class="text-info"><i class="fas fa-cloud me-1"></i> Open-Meteo API (online)</span>';
+    }
+}
+
+// Poll offline mode every 10 s to keep badge in sync if changed externally
+async function syncOfflineModeBadge() {
+    try {
+        const res = await fetch('/api/settings/offline-mode');
+        const data = await res.json();
+        updateOfflineBadge(data.offline_mode);
+        updateWeatherSourceBadge(data.offline_mode);
+    } catch (_) {}
+}
+
+// Wire into DOMContentLoaded bootstrap
+document.addEventListener('DOMContentLoaded', () => {
+    syncOfflineModeBadge();
+    setInterval(syncOfflineModeBadge, 10000);
+});

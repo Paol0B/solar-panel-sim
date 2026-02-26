@@ -32,8 +32,13 @@ async fn main() {
     };
     println!("Configuration loaded: {} plants", config.plants.len());
 
-    // 2. Initialize shared state
-    let state = AppState::new();
+    // 2. Initialize shared state (seed offline flag from config)
+    let state = AppState::new(config.offline_mode);
+    if config.offline_mode {
+        println!("[MODE] Offline mode ENABLED — using solar geometry algorithm");
+    } else {
+        println!("[MODE] Online mode — will fetch from Open-Meteo API");
+    }
 
     // 3. Start background tasks for each plant
     for plant in &config.plants {
@@ -42,22 +47,39 @@ async fn main() {
         
         tokio::spawn(async move {
             loop {
-                match services::power_service::get_current_data(
-                    plant_config.latitude, 
-                    plant_config.longitude,
-                    plant_config.nominal_power_kw
-                ).await {
+                let offline = state_clone.is_offline();
+                let result = if offline {
+                    // Pure offline – no API call
+                    let data = services::power_service::get_offline_data(
+                        plant_config.latitude,
+                        plant_config.longitude,
+                        plant_config.nominal_power_kw,
+                    );
+                    Ok(data)
+                } else {
+                    // Online: call Open-Meteo, falls back to offline on error
+                    services::power_service::get_current_data(
+                        plant_config.latitude,
+                        plant_config.longitude,
+                        plant_config.nominal_power_kw,
+                    ).await
+                };
+
+                match result {
                     Ok(data) => {
+                        let mode_tag = if offline { "OFFLINE" } else { "ONLINE" };
                         state_clone.set_data(
-                            &plant_config.id, 
-                            data.power_kw, 
+                            &plant_config.id,
+                            data.power_kw,
                             data.temperature_c,
                             plant_config.nominal_power_kw,
                             data.weather_code,
-                            data.is_day
+                            data.is_day,
                         );
-                        println!("[UPDATE] Plant: {} | DC Power: {:.2} kW | Temp: {:.1}°C", 
-                                 plant_config.id, data.power_kw, data.temperature_c);
+                        println!(
+                            "[{} UPDATE] Plant: {} | DC Power: {:.2} kW | Temp: {:.1}°C",
+                            mode_tag, plant_config.id, data.power_kw, data.temperature_c
+                        );
                     }
                     Err(e) => {
                         eprintln!("Error updating plant {}: {}", plant_config.id, e);

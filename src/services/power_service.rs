@@ -1,10 +1,11 @@
-use chrono::{DateTime, Utc, Timelike};
+use chrono::{DateTime, Utc};
 use reqwest::Error;
 
 use crate::models::power::{
     CurrentWeatherResponse,
     SimulationData,
 };
+use crate::services::solar_algorithm;
 
 fn estimate_power_kw_from_radiation(g_w_m2: f64, nominal_power_kw: f64, cell_temp_c: f64) -> f64 {
     // P = P_nom * (G / 1000) * [1 + alpha * (T_cell - 25)]
@@ -65,33 +66,20 @@ pub async fn get_current_data(
         Err(e) => eprintln!("Failed to fetch weather data: {}", e),
     }
 
-    // Fallback Simulation (Offline Mode)
-    // Simulate day/night cycle based on UTC time
+    // API failed → fall back to offline algorithm
+    Ok(get_offline_data(lat, lon, nominal_power_kw))
+}
+
+/// Pure offline estimation – no network calls.
+/// Uses the deterministic solar geometry & climatological model.
+pub fn get_offline_data(lat: f64, lon: f64, nominal_power_kw: f64) -> SimulationData {
     let now = Utc::now();
-    let hour = now.hour() as f64 + (now.minute() as f64 / 60.0);
-    
-    // Simple sun curve between 6:00 and 18:00
-    let g_sim = if hour > 6.0 && hour < 18.0 {
-        let peak = 1000.0; // W/m2
-        // Parabolic curve
-        let x = (hour - 12.0) / 6.0; // -1 to 1
-        peak * (1.0 - x * x).max(0.0)
-    } else {
-        0.0
-    };
-
-    let ambient_sim = 15.0 + (g_sim / 100.0); // 15C night, up to 25C day
-    let temperature_c = estimate_cell_temperature(ambient_sim, g_sim);
-    let power_kw = estimate_power_kw_from_radiation(g_sim, nominal_power_kw, temperature_c);
-    
-    let is_day = g_sim > 0.0;
-    let weather_code = if is_day { 0 } else { 0 }; // Clear sky default
-
-    Ok(SimulationData {
+    let est = solar_algorithm::estimate(lat, lon, nominal_power_kw, now);
+    SimulationData {
         timestamp: now,
-        power_kw,
-        temperature_c,
-        weather_code,
-        is_day,
-    })
+        power_kw: est.power_kw,
+        temperature_c: est.cell_temp_c,
+        weather_code: est.weather_code,
+        is_day: est.is_day,
+    }
 }

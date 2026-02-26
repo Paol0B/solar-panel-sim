@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde::Deserialize;
 
 use crate::config::{Config, PlantConfig};
 use crate::models::power::{ModbusInfo, PlantStatusResponse};
@@ -89,7 +90,47 @@ pub async fn get_global_power(State(state): State<AppState>) -> impl IntoRespons
         (status = 500, description = "Internal server error")
     )
 )]
-pub async fn get_modbus_info(State(config): State<Config>) -> impl IntoResponse {
+/// GET /api/settings/offline-mode
+/// Get current offline-mode setting
+#[utoipa::path(
+    get,
+    path = "/api/settings/offline-mode",
+    responses(
+        (status = 200, description = "Current offline-mode state")
+    )
+)]
+pub async fn get_offline_mode(State(state): State<AppState>) -> impl IntoResponse {
+    Json(serde_json::json!({ "offline_mode": state.is_offline() }))
+}
+
+#[derive(Deserialize)]
+pub struct OfflineModeBody {
+    pub enabled: bool,
+}
+
+/// POST /api/settings/offline-mode
+/// Toggle offline mode at runtime
+#[utoipa::path(
+    post,
+    path = "/api/settings/offline-mode",
+    request_body(content = OfflineModeBody, description = "{ \"enabled\": true|false }"),
+    responses(
+        (status = 200, description = "Offline-mode updated")
+    )
+)]
+pub async fn set_offline_mode(
+    State(state): State<AppState>,
+    Json(body): Json<OfflineModeBody>,
+) -> impl IntoResponse {
+    state.set_offline(body.enabled);
+    let msg = if body.enabled {
+        "Offline mode ENABLED — using solar geometry algorithm"
+    } else {
+        "Online mode ENABLED — fetching from Open-Meteo API"
+    };
+    println!("[SETTINGS] {}", msg);
+    Json(serde_json::json!({ "offline_mode": body.enabled, "message": msg }))
+}
     // All numeric variables are encoded as IEEE 754 float32 split across
     // TWO consecutive u16 registers (big-endian: high word first).
     // Status uses a single u16 register (raw value, no encoding).
@@ -139,4 +180,48 @@ pub async fn get_modbus_info(State(config): State<Config>) -> impl IntoResponse 
         });
     }
     Json(info).into_response()
+}
+
+// ─── Settings: Offline Mode ───────────────────────────────────────────────────
+
+/// GET /api/settings/offline-mode
+/// Returns the current offline-mode flag.
+#[utoipa::path(
+    get,
+    path = "/api/settings/offline-mode",
+    responses(
+        (status = 200, description = "{ offline_mode: bool }")
+    )
+)]
+pub async fn get_offline_mode(State(state): State<AppState>) -> impl IntoResponse {
+    Json(serde_json::json!({ "offline_mode": state.is_offline() }))
+}
+
+#[derive(Deserialize)]
+pub struct OfflineModeBody {
+    pub enabled: bool,
+}
+
+/// POST /api/settings/offline-mode
+/// Toggle offline mode at runtime without restarting the server.
+/// Body: `{ "enabled": true }` or `{ "enabled": false }`.
+#[utoipa::path(
+    post,
+    path = "/api/settings/offline-mode",
+    responses(
+        (status = 200, description = "{ offline_mode: bool, message: string }")
+    )
+)]
+pub async fn set_offline_mode(
+    State(state): State<AppState>,
+    Json(body): Json<OfflineModeBody>,
+) -> impl IntoResponse {
+    state.set_offline(body.enabled);
+    let msg = if body.enabled {
+        "Offline mode ENABLED — using solar geometry algorithm"
+    } else {
+        "Online mode ENABLED — fetching from Open-Meteo API"
+    };
+    println!("[SETTINGS] {}", msg);
+    Json(serde_json::json!({ "offline_mode": body.enabled, "message": msg }))
 }

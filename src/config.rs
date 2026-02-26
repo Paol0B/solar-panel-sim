@@ -1,10 +1,14 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+fn default_offline_mode() -> bool { false }
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub server: ServerConfig,
     pub modbus: ModbusConfig,
+    #[serde(default = "default_offline_mode")]
+    pub offline_mode: bool,
     pub plants: Vec<PlantConfig>,
 }
 
