@@ -34,7 +34,7 @@
       "nominal_power_kw": 400.0,
       "timezone": "Europe/Rome",
       "modbus_mapping": {
-        "base_address": 100
+        "base_address": 200
       }
     },
     {
@@ -45,7 +45,7 @@
       "nominal_power_kw": 50000.0,
       "timezone": "America/Los_Angeles",
       "modbus_mapping": {
-        "base_address": 200
+        "base_address": 400
       }
     }
   ]
