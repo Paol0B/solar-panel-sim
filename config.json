@@ -6,6 +6,14 @@
     "port": 5020
   },
   "offline_mode": true,
+  "mqtt": {
+    "enabled": false,
+    "broker_host": "localhost",
+    "broker_port": 1883,
+    "topic_prefix": "solar",
+    "client_id": "solar-scada-sim",
+    "publish_interval_s": 5
+  },
   "plants": [
     {
       "id": "plant_1",
@@ -15,12 +23,7 @@
       "nominal_power_kw": 1000.0,
       "timezone": "Europe/Rome",
       "modbus_mapping": {
-        "power_address": 0,
-        "voltage_address": 2,
-        "current_address": 4,
-        "frequency_address": 6,
-        "temperature_address": 8,
-        "status_address": 10
+        "base_address": 0
       }
     },
     {
@@ -31,12 +34,7 @@
       "nominal_power_kw": 400.0,
       "timezone": "Europe/Rome",
       "modbus_mapping": {
-        "power_address": 20,
-        "voltage_address": 22,
-        "current_address": 24,
-        "frequency_address": 26,
-        "temperature_address": 28,
-        "status_address": 30
+        "base_address": 100
       }
     },
     {
@@ -47,13 +45,9 @@
       "nominal_power_kw": 50000.0,
       "timezone": "America/Los_Angeles",
       "modbus_mapping": {
-        "power_address": 40,
-        "voltage_address": 42,
-        "current_address": 44,
-        "frequency_address": 46,
-        "temperature_address": 48,
-        "status_address": 50
+        "base_address": 200
       }
     }
   ]
 }
+

@@ -10,11 +10,11 @@ mod config;
 use std::net::SocketAddr;
 use std::time::Duration;
 use axum::{Router, routing::get, response::Html};
-use crate::routes::power_routes::power_routes;
+use crate::routes::power_routes::api_routes;
 use utoipa::OpenApi;
 use utoipa_scalar::Scalar;
 use crate::api_docs::ApiDoc;
-use crate::shared_state::AppState;
+use crate::shared_state::{AppState, SharedState};
 use crate::config::Config;
 
 use std::collections::HashMap;
@@ -72,9 +72,13 @@ async fn main() {
                             &plant_config.id,
                             data.power_kw,
                             data.temperature_c,
+                            data.ambient_temp_c,
                             plant_config.nominal_power_kw,
                             data.weather_code,
                             data.is_day,
+                            data.poa_irradiance_w_m2,
+                            data.cloud_factor,
+                            data.solar_elevation_deg,
                         );
                         println!(
                             "[{} UPDATE] Plant: {} | DC Power: {:.2} kW | Temp: {:.1}°C",
@@ -94,62 +98,118 @@ async fn main() {
     let modbus_port = config.modbus.port;
     let modbus_addr = SocketAddr::from(([0, 0, 0, 0], modbus_port));
     let state_modbus = state.clone();
-    
-    // Create register map from config.
-    // Numeric variables (Power, Voltage, Current, Frequency, Temperature) are encoded as
-    // IEEE 754 float32 stored in TWO consecutive u16 registers (big-endian: high word at
-    // the configured address, low word at configured address + 1).
-    // Status occupies a single u16 register (word_index = 0).
+
+    // Build register map: each plant gets a 100-register block starting at base_address.
+    // Float32 values → 2 u16 registers (IEEE 754 BE, high word first).
+    // u16 values      → 1 register.
+    use modbus_server::*;
     let mut register_map = HashMap::new();
     for plant in &config.plants {
-        let m = &plant.modbus_mapping;
-        println!(
-            "[MODBUS MAP] Plant: {} → Power@{}+{}, Voltage@{}+{}, Current@{}+{}, Freq@{}+{}, Temp@{}+{}, Status@{}",
-            plant.id,
-            m.power_address,       m.power_address + 1,
-            m.voltage_address,     m.voltage_address + 1,
-            m.current_address,     m.current_address + 1,
-            m.frequency_address,   m.frequency_address + 1,
-            m.temperature_address, m.temperature_address + 1,
-            m.status_address
-        );
+        let base = plant.modbus_mapping.base_address;
 
-        // Helper macro: insert high (word 0) + low (word 1) for a float32 variable.
-        macro_rules! ins_float {
-            ($addr:expr, $vt:ident) => {
-                register_map.insert($addr,     (plant.id.clone(), modbus_server::VariableType::$vt, 0u8));
-                register_map.insert($addr + 1, (plant.id.clone(), modbus_server::VariableType::$vt, 1u8));
+        macro_rules! ins_f {
+            ($off:expr, $vt:ident) => {
+                register_map.insert(base + $off,     (plant.id.clone(), VariableType::$vt, 0u8));
+                register_map.insert(base + $off + 1, (plant.id.clone(), VariableType::$vt, 1u8));
+            };
+        }
+        macro_rules! ins_u {
+            ($off:expr, $vt:ident) => {
+                register_map.insert(base + $off, (plant.id.clone(), VariableType::$vt, 0u8));
             };
         }
 
-        ins_float!(m.power_address,       Power);
-        ins_float!(m.voltage_address,     Voltage);
-        ins_float!(m.current_address,     Current);
-        ins_float!(m.frequency_address,   Frequency);
-        ins_float!(m.temperature_address, Temperature);
-        // Status: single u16, word_index = 0
-        register_map.insert(m.status_address, (plant.id.clone(), modbus_server::VariableType::Status, 0u8));
+        // AC Output
+        ins_f!(REG_POWER_KW,            PowerKw);
+        ins_f!(REG_VOLTAGE_L1_V,        VoltageL1V);
+        ins_f!(REG_CURRENT_L1_A,        CurrentL1A);
+        ins_f!(REG_FREQUENCY_HZ,        FrequencyHz);
+        ins_f!(REG_TEMPERATURE_C,       TemperatureC);
+        ins_u!(REG_STATUS,              Status);
+        ins_f!(REG_VOLTAGE_L2_V,        VoltageL2V);
+        ins_f!(REG_VOLTAGE_L3_V,        VoltageL3V);
+        ins_f!(REG_CURRENT_L2_A,        CurrentL2A);
+        ins_f!(REG_CURRENT_L3_A,        CurrentL3A);
+        ins_f!(REG_REACTIVE_POWER_KVAR, ReactivePowerKvar);
+        ins_f!(REG_APPARENT_POWER_KVA,  ApparentPowerKva);
+        ins_f!(REG_POWER_FACTOR,        PowerFactor);
+        ins_f!(REG_ROCOF_HZ_S,          RocofHzS);
+        // DC / MPPT
+        ins_f!(REG_DC_VOLTAGE_V,        DcVoltageV);
+        ins_f!(REG_DC_CURRENT_A,        DcCurrentA);
+        ins_f!(REG_DC_POWER_KW,         DcPowerKw);
+        ins_f!(REG_MPPT_VOLTAGE_V,      MpptVoltageV);
+        ins_f!(REG_MPPT_CURRENT_A,      MpptCurrentA);
+        // Thermal
+        ins_f!(REG_INVERTER_TEMP_C,     InverterTempC);
+        ins_f!(REG_AMBIENT_TEMP_C,      AmbientTempC);
+        // Performance & Irradiance
+        ins_f!(REG_EFFICIENCY_PCT,      EfficiencyPct);
+        ins_f!(REG_POA_IRRADIANCE,      PoaIrradianceWM2);
+        ins_f!(REG_SOLAR_ELEVATION,     SolarElevationDeg);
+        ins_f!(REG_PERF_RATIO,          PerformanceRatio);
+        ins_f!(REG_SPECIFIC_YIELD,      SpecificYieldKwhKwp);
+        ins_f!(REG_CAPACITY_FACTOR,     CapacityFactorPct);
+        // Safety & Alarms
+        ins_f!(REG_ISOLATION_MOHM,      IsolationMohm);
+        ins_u!(REG_FAULT_CODE,          FaultCode);
+        ins_u!(REG_ALARM_FLAGS,         AlarmFlags);
+        // Energy Counters
+        ins_f!(REG_DAILY_ENERGY_KWH,    DailyEnergyKwh);
+        ins_f!(REG_MONTHLY_ENERGY_KWH,  MonthlyEnergyKwh);
+        ins_f!(REG_TOTAL_ENERGY_KWH,    TotalEnergyKwh);
+
+        println!(
+            "[MODBUS] Plant: {} | base={} | regs {}..{} (63 variables, 100-reg block)",
+            plant.id, base, base, base + 62
+        );
     }
-    
+
     tokio::spawn(async move {
         if let Err(e) = modbus_server::run_server(modbus_addr, state_modbus, register_map).await {
             eprintln!("Modbus server error: {}", e);
         }
     });
 
-    // 5. Start Axum HTTP server
+    // 5. Optionally start MQTT publisher
+    if config.mqtt.enabled {
+        let mqtt_cfg   = config.mqtt.clone();
+        let mqtt_state = state.clone();
+        let mqtt_plants = config.plants.clone();
+        tokio::spawn(async move {
+            services::mqtt_service::run_publisher(mqtt_cfg, mqtt_state, mqtt_plants).await;
+        });
+        println!("[MQTT] Publisher task started → {}:{}", config.mqtt.broker_host, config.mqtt.broker_port);
+    }
+
+    // 6. Start Axum HTTP server
     let server_port = config.server.port;
+    let shared = SharedState { app: state.clone(), config: config.clone() };
+
     let app = Router::new()
-        .nest("/api", power_routes(config.clone(), state.clone()))
+        // Top-level routes (health, metrics, WebSocket telemetry)
+        .route("/health",       get(crate::controllers::power_controller::health_check))
+        .route("/metrics",      get(crate::controllers::power_controller::prometheus_metrics))
+        .route("/ws/telemetry", get(crate::controllers::power_controller::ws_telemetry))
+        .with_state(shared.clone())
+        // API routes nested under /api
+        .nest("/api", api_routes(shared))
         .route("/scalar", get(|| async {
             Html(Scalar::new(ApiDoc::openapi()).to_html())
         }))
         .fallback_service(ServeDir::new("static"));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], server_port));
-    println!("API Server listening on http://{}", addr);
-    println!("Scalar UI: http://{}/scalar", addr);
-    println!("Modbus TCP: {}", modbus_addr);
+    println!("─────────────────────────────────────────────────────");
+    println!(" Solar Panel Simulator | v{}", env!("CARGO_PKG_VERSION"));
+    println!("─────────────────────────────────────────────────────");
+    println!(" HTTP API:    http://{}/api", addr);
+    println!(" Scalar UI:   http://{}/scalar", addr);
+    println!(" Health:      http://{}/health", addr);
+    println!(" Metrics:     http://{}/metrics", addr);
+    println!(" WebSocket:   ws://{}/ws/telemetry", addr);
+    println!(" Modbus TCP:  {}", modbus_addr);
+    println!("─────────────────────────────────────────────────────");
 
     axum_server::bind(addr)
         .serve(app.into_make_service())

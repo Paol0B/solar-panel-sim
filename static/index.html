@@ -111,6 +111,10 @@
                     <div class="fki-label">ACTIVE</div>
                     <div class="fki-val text-success"><span id="sb-active">0</span>/<span id="sb-total">0</span></div>
                 </div>
+                <div class="fleet-kpi-item flex-fill">
+                    <div class="fki-label">TODAY</div>
+                    <div class="fki-val text-info small" id="sb-daily-energy">— kWh</div>
+                </div>
             </div>
             <div class="position-relative">
                 <i class="fas fa-search position-absolute text-muted" style="left:9px;top:8px;font-size:10px;"></i>
@@ -194,6 +198,7 @@
                 <button class="detail-tab active" data-tab="tab-kpi"><i class="fas fa-tachometer-alt me-1"></i>Live Data</button>
                 <button class="detail-tab" data-tab="tab-chart"><i class="fas fa-chart-line me-1"></i>Chart</button>
                 <button class="detail-tab" data-tab="tab-modbus"><i class="fas fa-network-wired me-1"></i>Modbus</button>
+                <button class="detail-tab" data-tab="tab-alarms"><i class="fas fa-bell me-1"></i>Alarms <span class="badge bg-danger ms-1 d-none" id="alarm-tab-badge">0</span></button>
                 <button class="detail-tab" data-tab="tab-info"><i class="fas fa-info-circle me-1"></i>Plant Info</button>
             </div>
 
@@ -217,14 +222,14 @@
                             <div class="kpi-card">
                                 <div class="kpi-card-label"><i class="fas fa-plug text-info me-1"></i>Voltage</div>
                                 <div class="kpi-card-val text-info" id="detail-voltage">— V</div>
-                                <div class="kpi-card-sub text-muted small">AC Grid</div>
+                                <div class="kpi-card-sub text-muted small">L1 — AC grid</div>
                             </div>
                         </div>
                         <div class="col-6 col-xl-3">
                             <div class="kpi-card">
                                 <div class="kpi-card-label"><i class="fas fa-water text-primary me-1"></i>Current</div>
                                 <div class="kpi-card-val text-white" id="detail-current">— A</div>
-                                <div class="kpi-card-sub text-muted small">Phase RMS</div>
+                                <div class="kpi-card-sub text-muted small">L1 — RMS</div>
                             </div>
                         </div>
                         <div class="col-6 col-xl-3">
@@ -306,6 +311,46 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 3-Phase Extras (L2 / L3 / ROCOF) -->
+                    <div class="scada-card mt-3">
+                        <div class="scada-card-title"><i class="fas fa-project-diagram me-2 text-info"></i>3-Phase Grid (L2 / L3 / ROCOF)</div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">L2 Voltage</div><div class="kpi-card-val text-info" id="detail-vl2">— V</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">L3 Voltage</div><div class="kpi-card-val text-info" id="detail-vl3">— V</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">L2 Current</div><div class="kpi-card-val text-white" id="detail-il2">— A</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">L3 Current</div><div class="kpi-card-val text-white" id="detail-il3">— A</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">ROCOF df/dt</div><div class="kpi-card-val text-secondary" id="detail-rocof">— Hz/s</div></div></div>
+                        </div>
+                    </div>
+
+                    <!-- DC / MPPT -->
+                    <div class="scada-card mt-3">
+                        <div class="scada-card-title"><i class="fas fa-solar-panel me-2 text-warning"></i>DC / MPPT</div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">DC Voltage</div><div class="kpi-card-val text-warning" id="detail-dc-voltage">— V</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">DC Current</div><div class="kpi-card-val text-warning" id="detail-dc-current">— A</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">DC Power</div><div class="kpi-card-val text-warning" id="detail-dc-power">— kW</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">MPPT Voltage</div><div class="kpi-card-val text-success" id="detail-mppt-v">— V</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Inv. Temp</div><div class="kpi-card-val" id="detail-inv-temp">— °C</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">DC-GND Isol.</div><div class="kpi-card-val" id="detail-isol">— MΩ</div></div></div>
+                        </div>
+                    </div>
+
+                    <!-- Energy Counters & KPIs -->
+                    <div class="scada-card mt-3">
+                        <div class="scada-card-title"><i class="fas fa-database me-2 text-success"></i>Energy Counters &amp; KPIs</div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Monthly</div><div class="kpi-card-val text-info" id="detail-monthly-energy">— kWh</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Lifetime</div><div class="kpi-card-val text-info" id="detail-lifetime-energy">— kWh</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Perf. Ratio</div><div class="kpi-card-val text-success" id="detail-pr">— %</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Spec. Yield</div><div class="kpi-card-val text-success small" id="detail-specific-yield">—</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Cap. Factor</div><div class="kpi-card-val text-success" id="detail-capacity-factor">— %</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">POA Irrad.</div><div class="kpi-card-val text-secondary" id="detail-poa">— W/m²</div></div></div>
+                            <div class="col-4 col-xl-2"><div class="kpi-card"><div class="kpi-card-label text-muted">Solar Elev.</div><div class="kpi-card-val text-secondary" id="detail-elevation">— °</div></div></div>
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- TAB: CHART -->
@@ -402,21 +447,48 @@
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <div class="scada-card">
-                                <div class="scada-card-title"><i class="fas fa-microchip me-2 text-info"></i>Encoding — IEEE 754 float32</div>
-                                <table class="table table-sm scada-table mb-0 mt-2">
-                                    <thead><tr><th>Variable</th><th>Registers</th><th>Encoding</th><th>Unit</th></tr></thead>
+                                <div class="scada-card-title"><i class="fas fa-microchip me-2 text-info"></i>Register Layout — per plant (100-reg block)</div>
+                                <table class="table table-sm scada-table mb-0 mt-2" style="font-size:11px">
+                                    <thead><tr><th>Offset</th><th>Variable</th><th>Regs</th><th>Unit</th></tr></thead>
                                     <tbody>
-                                        <tr><td>Power</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">kW</td></tr>
-                                        <tr><td>Voltage</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">V</td></tr>
-                                        <tr><td>Current</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">A</td></tr>
-                                        <tr><td>Frequency</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">Hz</td></tr>
-                                        <tr><td>Temperature</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">°C</td></tr>
-                                        <tr><td>Status</td><td class="font-monospace text-secondary">addr</td><td class="text-muted font-monospace">u16 raw</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-warning font-monospace">+0</td><td>Active power</td><td>2</td><td class="text-muted">kW</td></tr>
+                                        <tr><td class="text-warning font-monospace">+2</td><td>Voltage L1</td><td>2</td><td class="text-muted">V</td></tr>
+                                        <tr><td class="text-warning font-monospace">+4</td><td>Current L1</td><td>2</td><td class="text-muted">A</td></tr>
+                                        <tr><td class="text-warning font-monospace">+6</td><td>Frequency</td><td>2</td><td class="text-muted">Hz</td></tr>
+                                        <tr><td class="text-warning font-monospace">+8</td><td>Cell temperature</td><td>2</td><td class="text-muted">°C</td></tr>
+                                        <tr><td class="text-secondary font-monospace">+10</td><td>Status (enum)</td><td>1</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-warning font-monospace">+11</td><td>Voltage L2</td><td>2</td><td class="text-muted">V</td></tr>
+                                        <tr><td class="text-warning font-monospace">+13</td><td>Voltage L3</td><td>2</td><td class="text-muted">V</td></tr>
+                                        <tr><td class="text-warning font-monospace">+15</td><td>Current L2</td><td>2</td><td class="text-muted">A</td></tr>
+                                        <tr><td class="text-warning font-monospace">+17</td><td>Current L3</td><td>2</td><td class="text-muted">A</td></tr>
+                                        <tr><td class="text-warning font-monospace">+19</td><td>Reactive power Q</td><td>2</td><td class="text-muted">kvar</td></tr>
+                                        <tr><td class="text-warning font-monospace">+21</td><td>Apparent power S</td><td>2</td><td class="text-muted">kVA</td></tr>
+                                        <tr><td class="text-warning font-monospace">+23</td><td>Power factor</td><td>2</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-warning font-monospace">+25</td><td>ROCOF (df/dt)</td><td>2</td><td class="text-muted">Hz/s</td></tr>
+                                        <tr><td class="text-warning font-monospace">+27</td><td>DC voltage</td><td>2</td><td class="text-muted">V</td></tr>
+                                        <tr><td class="text-warning font-monospace">+29</td><td>DC current</td><td>2</td><td class="text-muted">A</td></tr>
+                                        <tr><td class="text-warning font-monospace">+31</td><td>DC power</td><td>2</td><td class="text-muted">kW</td></tr>
+                                        <tr><td class="text-warning font-monospace">+33</td><td>MPPT voltage</td><td>2</td><td class="text-muted">V</td></tr>
+                                        <tr><td class="text-warning font-monospace">+35</td><td>MPPT current</td><td>2</td><td class="text-muted">A</td></tr>
+                                        <tr><td class="text-warning font-monospace">+37</td><td>Inverter heatsink temp</td><td>2</td><td class="text-muted">°C</td></tr>
+                                        <tr><td class="text-warning font-monospace">+39</td><td>Ambient temperature</td><td>2</td><td class="text-muted">°C</td></tr>
+                                        <tr><td class="text-warning font-monospace">+41</td><td>Efficiency</td><td>2</td><td class="text-muted">%</td></tr>
+                                        <tr><td class="text-warning font-monospace">+43</td><td>POA irradiance</td><td>2</td><td class="text-muted">W/m²</td></tr>
+                                        <tr><td class="text-warning font-monospace">+45</td><td>Solar elevation</td><td>2</td><td class="text-muted">°</td></tr>
+                                        <tr><td class="text-warning font-monospace">+47</td><td>Performance ratio (PR)</td><td>2</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-warning font-monospace">+49</td><td>Specific yield</td><td>2</td><td class="text-muted">kWh/kWp</td></tr>
+                                        <tr><td class="text-warning font-monospace">+51</td><td>Capacity factor</td><td>2</td><td class="text-muted">%</td></tr>
+                                        <tr><td class="text-warning font-monospace">+53</td><td>Isolation resistance (DC-GND)</td><td>2</td><td class="text-muted">MΩ</td></tr>
+                                        <tr><td class="text-secondary font-monospace">+55</td><td>Fault code (IEC)</td><td>1</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-secondary font-monospace">+56</td><td>Alarm bitmask</td><td>1</td><td class="text-muted">—</td></tr>
+                                        <tr><td class="text-warning font-monospace">+57</td><td>Daily energy</td><td>2</td><td class="text-muted">kWh</td></tr>
+                                        <tr><td class="text-warning font-monospace">+59</td><td>Monthly energy</td><td>2</td><td class="text-muted">kWh</td></tr>
+                                        <tr><td class="text-warning font-monospace">+61</td><td>Lifetime energy</td><td>2</td><td class="text-muted">kWh</td></tr>
                                     </tbody>
                                 </table>
                                 <p class="text-muted small mt-2 mb-0">
                                     <i class="fas fa-info-circle me-1"></i>
-                                    Decode: <code class="text-info">raw = (hi &lt;&lt; 16) | lo &nbsp;→&nbsp; struct.unpack('!f', struct.pack('!I', raw))[0]</code>
+                                    Float decode: <code class="text-info">raw=(hi&lt;&lt;16)|lo → struct.unpack('!f',struct.pack('!I',raw))[0]</code>
                                 </p>
                             </div>
                         </div>
@@ -426,6 +498,28 @@
                                 <pre class="code-snippet mb-0 mt-2" id="mb-code-snippet"><!-- rendered by JS --></pre>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- TAB: ALARMS -->
+                <div id="tab-alarms" class="tab-panel d-none">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="scada-card-title mb-0"><i class="fas fa-bell me-2 text-danger"></i>Alarm Log</div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="clearPlantAlarms()"><i class="fas fa-check-double me-1"></i>Acknowledge All</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm scada-table mb-0">
+                            <thead><tr>
+                                <th style="width:90px">Severity</th>
+                                <th style="width:70px">Code</th>
+                                <th>Message</th>
+                                <th style="width:140px">Since</th>
+                                <th style="width:80px">Active</th>
+                            </tr></thead>
+                            <tbody id="alarm-tbody">
+                                <tr><td colspan="5" class="text-center text-muted py-3 small">No alarms — select a plant</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 

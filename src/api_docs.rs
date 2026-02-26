@@ -15,7 +15,7 @@ use crate::config;
     ),
     components(
         schemas(
-            power::PowerPoint,
+            power::PlantData,
             config::PlantConfig,
             power::ModbusInfo
         )

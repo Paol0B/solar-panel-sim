@@ -12,6 +12,7 @@ let markers            = {};
 let miniMap            = null;
 let powerChart         = null;
 let updateInterval     = null;
+let alarmInterval      = null;
 let modbusInfo         = [];
 let chartData          = [];   // { time, kw }[]
 
@@ -71,6 +72,7 @@ function renderMapMarkers() {
 function showMap() {
     currentPlantId = null;
     if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+    if (alarmInterval)  { clearInterval(alarmInterval);  alarmInterval  = null; }
     if (miniMap) { miniMap.remove(); miniMap = null; }
     document.getElementById('map-view').classList.remove('d-none');
     const dv = document.getElementById('detail-view');
@@ -221,10 +223,15 @@ async function updateGlobalData() {
     try {
         const res = await fetch('/api/power/global');
         const data = await res.json();
-        let totalPower = 0, activeCount = 0;
-        for (const [id, power] of Object.entries(data)) {
-            totalPower += power;
-            if (power > 0.1) activeCount++;
+        // data is now GlobalPowerResponse with per_plant, total_power_kw, etc.
+        const perPlant = data.per_plant || {};
+        const totalPower   = data.total_power_kw   ?? 0;
+        const plantsRun    = data.plants_running    ?? 0;
+        const plantsTotal  = data.plants_total      ?? plants.length;
+        const fleetPR      = data.fleet_performance_ratio ?? 0;
+        const dailyTotal   = data.total_daily_energy_kwh  ?? 0;
+
+        for (const [id, power] of Object.entries(perPlant)) {
             const el = document.getElementById(`list-power-${id}`);
             if (el) {
                 el.innerText    = fmtPower(power);
@@ -233,14 +240,78 @@ async function updateGlobalData() {
             const dot = document.getElementById(`dot-${id}`);
             if (dot) dot.style.background = power > 0.1 ? '#22c55e' : '#6b7280';
         }
+
         document.getElementById('sb-total-power').innerText  = fmtPower(totalPower);
-        document.getElementById('sb-active').innerText       = activeCount;
-        document.getElementById('map-active').innerText      = activeCount;
+        document.getElementById('sb-active').innerText       = plantsRun;
+        document.getElementById('sb-total').innerText        = plantsTotal;
+        document.getElementById('map-active').innerText      = plantsRun;
+        document.getElementById('map-total').innerText       = plantsTotal;
         document.getElementById('map-total-power').innerText = fmtPower(totalPower);
-        const effEst = activeCount > 0 ? Math.round(activeCount / plants.length * 85) : 0;
-        document.getElementById('map-avg-eff').innerText = activeCount > 0 ? `${effEst}%` : '—%';
+        const effEl = document.getElementById('map-avg-eff');
+        if (effEl) effEl.innerText = plantsRun > 0 ? `PR ${(fleetPR * 100).toFixed(0)}%` : '—%';
+        const dailyEl = document.getElementById('sb-daily-energy');
+        if (dailyEl) dailyEl.innerText = `${dailyTotal.toFixed(0)} kWh today`;
         document.getElementById('sb-last-update').innerText  = new Date().toLocaleTimeString();
     } catch (e) { console.error('updateGlobalData:', e); }
+}
+
+// ============================================================
+//  ALARM FETCH / RENDER
+// ============================================================
+async function fetchPlantAlarms() {
+    if (!currentPlantId) return;
+    try {
+        const res = await fetch(`/api/plants/${currentPlantId}/alarms`);
+        if (!res.ok) return;
+        const alarms = await res.json();
+        renderAlarms(alarms);
+    } catch (e) { console.error('fetchPlantAlarms:', e); }
+}
+
+function renderAlarms(alarms) {
+    const tbody = document.getElementById('alarm-tbody');
+    if (!tbody) return;
+
+    const active = alarms.filter(a => a.active);
+    const badge  = document.getElementById('alarm-tab-badge');
+    if (badge) {
+        badge.textContent = active.length;
+        badge.classList.toggle('d-none', active.length === 0);
+    }
+
+    if (alarms.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-success py-3 small"><i class="fas fa-check-circle me-2"></i>No alarms</td></tr>';
+        return;
+    }
+
+    const SEV_CLASS = { INFO: 'text-info', WARNING: 'text-warning', CRITICAL: 'text-danger', FAULT: 'text-danger fw-bold' };
+    const SEV_BADGE = { INFO: 'bg-info-subtle text-info-emphasis border-info', WARNING: 'bg-warning-subtle text-warning-emphasis border-warning', CRITICAL: 'bg-danger-subtle text-danger-emphasis border-danger', FAULT: 'bg-danger text-white border-danger' };
+
+    tbody.innerHTML = '';
+    alarms.slice().sort((a, b) => b.active - a.active || a.severity.localeCompare(b.severity)).forEach(alarm => {
+        const since  = new Date(alarm.raised_at * 1000).toLocaleString();
+        const active = alarm.active
+            ? '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger small"><i class="fas fa-circle me-1" style="font-size:8px"></i>ACTIVE</span>'
+            : '<span class="badge bg-secondary small">CLEARED</span>';
+        const sevCls = SEV_BADGE[alarm.severity] || 'bg-secondary';
+        const tr = document.createElement('tr');
+        if (!alarm.active) tr.style.opacity = '0.5';
+        tr.innerHTML = `
+            <td><span class="badge border small ${sevCls}">${alarm.severity}</span></td>
+            <td class="font-monospace text-secondary">${alarm.code}</td>
+            <td class="text-light small">${alarm.message}</td>
+            <td class="font-monospace text-muted small">${since}</td>
+            <td>${active}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function clearPlantAlarms() {
+    if (!currentPlantId) return;
+    try {
+        await fetch(`/api/plants/${currentPlantId}/alarms`, { method: 'DELETE' });
+        await fetchPlantAlarms();
+    } catch (e) { console.error('clearPlantAlarms:', e); }
 }
 
 // ============================================================
@@ -277,8 +348,11 @@ function selectPlant(id) {
     renderPlantInfo(plant);
 
     if (updateInterval) clearInterval(updateInterval);
+    if (alarmInterval)  clearInterval(alarmInterval);
     fetchPlantDetail();
-    updateInterval = setInterval(fetchPlantDetail, 2000);
+    fetchPlantAlarms();
+    updateInterval = setInterval(fetchPlantDetail,  2000);
+    alarmInterval  = setInterval(fetchPlantAlarms, 10000);
 }
 
 // ============================================================
@@ -313,9 +387,9 @@ async function fetchPlantDetail() {
         document.getElementById('detail-power-bar').style.width = `${pct.toFixed(1)}%`;
         document.getElementById('detail-power-pct').innerText   = `${pct.toFixed(1)}% of nominal`;
 
-        // Voltage & Current
-        document.getElementById('detail-voltage').innerText = `${d.voltage_v.toFixed(1)} V`;
-        document.getElementById('detail-current').innerText = `${d.current_a.toFixed(2)} A`;
+        // Voltage & Current — use L1 from 3-phase model
+        document.getElementById('detail-voltage').innerText = `${(d.voltage_l1_v || d.voltage_v || 0).toFixed(1)} V`;
+        document.getElementById('detail-current').innerText = `${(d.current_l1_a || d.current_a || 0).toFixed(2)} A`;
 
         // Frequency with status
         document.getElementById('detail-frequency').innerText = `${d.frequency_hz.toFixed(2)} Hz`;
@@ -369,15 +443,36 @@ async function fetchPlantDetail() {
 
         // Status badge & solar array
         const statusEl = document.getElementById('detail-status');
-        if (d.status === 1) {
-            statusEl.innerText = 'RUNNING'; statusEl.className = 'badge bg-success fs-6';
-            document.getElementById('sun-visual').style.opacity = '1';
-            document.querySelectorAll('.panel').forEach(p => p.classList.add('active'));
-        } else {
-            statusEl.innerText = 'STOPPED'; statusEl.className = 'badge bg-secondary fs-6';
-            document.getElementById('sun-visual').style.opacity = '0.15';
-            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-        }
+        const STATUS_LABELS = ['STOPPED','RUNNING','FAULT','CURTAILED','STARTING','MPPT'];
+        const STATUS_CLASSES = ['bg-secondary','bg-success','bg-danger','bg-warning text-dark','bg-info text-dark','bg-primary'];
+        const st = d.status ?? 0;
+        statusEl.innerText   = STATUS_LABELS[st] ?? String(st);
+        statusEl.className   = `badge fs-6 ${STATUS_CLASSES[st] ?? 'bg-secondary'}`;
+        const isRunning      = st === 1 || st === 5;
+        document.getElementById('sun-visual').style.opacity = isRunning ? '1' : '0.15';
+        document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', isRunning));
+
+        // DC / MPPT section (optional elements — only update if present in DOM)
+        const setEl = (id, val) => { const e = document.getElementById(id); if (e) e.innerText = val; };
+        setEl('detail-dc-voltage',  `${(d.dc_voltage_v  || 0).toFixed(1)} V`);
+        setEl('detail-dc-current',  `${(d.dc_current_a  || 0).toFixed(2)} A`);
+        setEl('detail-dc-power',    `${(d.dc_power_kw   || 0).toFixed(3)} kW`);
+        setEl('detail-mppt-v',      `${(d.mppt_voltage_v || 0).toFixed(1)} V`);
+        setEl('detail-inv-temp',    `${(d.inverter_temp_c || 0).toFixed(1)} °C`);
+        setEl('detail-isol',        `${(d.isolation_resistance_mohm || 0).toFixed(2)} MΩ`);
+        setEl('detail-vl2',         `${(d.voltage_l2_v || 0).toFixed(1)} V`);
+        setEl('detail-vl3',         `${(d.voltage_l3_v || 0).toFixed(1)} V`);
+        setEl('detail-il2',         `${(d.current_l2_a || 0).toFixed(2)} A`);
+        setEl('detail-il3',         `${(d.current_l3_a || 0).toFixed(2)} A`);
+        setEl('detail-rocof',       `${(d.rocof_hz_s || 0).toFixed(4)} Hz/s`);
+        // Energy & KPIs
+        setEl('detail-monthly-energy', `${(d.monthly_energy_kwh || 0).toFixed(1)} kWh`);
+        setEl('detail-lifetime-energy',`${(d.total_energy_kwh   || 0).toFixed(1)} kWh`);
+        setEl('detail-pr',           `${((d.performance_ratio || 0) * 100).toFixed(1)} %`);
+        setEl('detail-specific-yield', `${(d.specific_yield_kwh_kwp || 0).toFixed(3)} kWh/kWp`);
+        setEl('detail-capacity-factor',`${(d.capacity_factor_percent || 0).toFixed(1)} %`);
+        setEl('detail-poa',          `${(d.poa_irradiance_w_m2 || 0).toFixed(0)} W/m²`);
+        setEl('detail-elevation',    `${(d.solar_elevation_deg || 0).toFixed(1)} °`);
 
         // Live Modbus update
         renderModbusRegisters(plant, d);
@@ -409,22 +504,60 @@ function floatToWords(value) {
     };
 }
 
-// No scaling factors — values are stored as raw IEEE 754 float32 in 2 consecutive registers.
-// Status is the only variable that occupies a single u16 register (raw integer).
+// No scaling — values are IEEE 754 float32 (2 regs) or u16 raw (1 reg).
+// Keys match the description prefixes returned by GET /api/modbus/info.
 const VAR_MAP = {
-    'Power':       { key: 'power_kw',       unit: 'kW',  regs: 2 },
-    'Voltage':     { key: 'voltage_v',       unit: 'V',   regs: 2 },
-    'Current':     { key: 'current_a',       unit: 'A',   regs: 2 },
-    'Frequency':   { key: 'frequency_hz',    unit: 'Hz',  regs: 2 },
-    'Temperature': { key: 'temperature_c',   unit: '°C',  regs: 2 },
-    'Status':      { key: 'status',          unit: '—',   regs: 1 },
+    // AC Output
+    'Active power':             { key: 'power_kw',                    unit: 'kW',       regs: 2 },
+    'AC Voltage L1':            { key: 'voltage_l1_v',                unit: 'V',        regs: 2 },
+    'AC Current L1':            { key: 'current_l1_a',                unit: 'A',        regs: 2 },
+    'Grid frequency':           { key: 'frequency_hz',                unit: 'Hz',       regs: 2 },
+    'Cell temperature':         { key: 'temperature_c',               unit: '°C',       regs: 2 },
+    'Inverter status':          { key: 'status',                      unit: '—',        regs: 1 },
+    'AC Voltage L2':            { key: 'voltage_l2_v',                unit: 'V',        regs: 2 },
+    'AC Voltage L3':            { key: 'voltage_l3_v',                unit: 'V',        regs: 2 },
+    'AC Current L2':            { key: 'current_l2_a',                unit: 'A',        regs: 2 },
+    'AC Current L3':            { key: 'current_l3_a',                unit: 'A',        regs: 2 },
+    'Reactive power Q':         { key: 'reactive_power_kvar',         unit: 'kvar',     regs: 2 },
+    'Apparent power S':         { key: 'apparent_power_kva',          unit: 'kVA',      regs: 2 },
+    'Power factor':             { key: 'power_factor',                unit: '—',        regs: 2 },
+    'ROCOF':                    { key: 'rocof_hz_s',                  unit: 'Hz/s',     regs: 2 },
+    // DC / MPPT
+    'DC link voltage':          { key: 'dc_voltage_v',                unit: 'V',        regs: 2 },
+    'DC string current':        { key: 'dc_current_a',                unit: 'A',        regs: 2 },
+    'DC input power':           { key: 'dc_power_kw',                 unit: 'kW',       regs: 2 },
+    'MPPT operating voltage':   { key: 'mppt_voltage_v',              unit: 'V',        regs: 2 },
+    'MPPT operating current':   { key: 'mppt_current_a',              unit: 'A',        regs: 2 },
+    // Thermal
+    'Inverter heatsink':        { key: 'inverter_temp_c',             unit: '°C',       regs: 2 },
+    'Ambient temperature':      { key: 'ambient_temp_c',              unit: '°C',       regs: 2 },
+    // Performance & Irradiance
+    'Inverter efficiency':      { key: 'efficiency_percent',          unit: '%',        regs: 2 },
+    'Plane-of-Array':           { key: 'poa_irradiance_w_m2',        unit: 'W/m²',     regs: 2 },
+    'Solar elevation':          { key: 'solar_elevation_deg',         unit: '°',        regs: 2 },
+    'Performance Ratio':        { key: 'performance_ratio',           unit: '—',        regs: 2 },
+    'Specific yield':           { key: 'specific_yield_kwh_kwp',      unit: 'kWh/kWp',  regs: 2 },
+    'Capacity factor':          { key: 'capacity_factor_percent',     unit: '%',        regs: 2 },
+    // Safety
+    'Isolation resistance':     { key: 'isolation_resistance_mohm',   unit: 'MΩ',       regs: 2 },
+    'Active fault code':        { key: 'fault_code',                  unit: '—',        regs: 1 },
+    'Alarm bitmask':            { key: 'alarm_flags',                 unit: '—',        regs: 1 },
+    // Energy
+    'Energy today':             { key: 'daily_energy_kwh',            unit: 'kWh',      regs: 2 },
+    'Energy this month':        { key: 'monthly_energy_kwh',          unit: 'kWh',      regs: 2 },
+    'Lifetime energy':          { key: 'total_energy_kwh',            unit: 'kWh',      regs: 2 },
 };
 
 function detectVar(desc) {
+    // Match description prefix (e.g. "Active power — Turin Main Plant")
+    for (const name of Object.keys(VAR_MAP)) {
+        if (desc.toLowerCase().startsWith(name.toLowerCase())) return name;
+    }
+    // Fallback: substring match
     for (const name of Object.keys(VAR_MAP)) {
         if (desc.toLowerCase().includes(name.toLowerCase())) return name;
     }
-    return 'Status';
+    return null;
 }
 
 function renderModbusRegisters(plant, liveData) {
@@ -432,7 +565,7 @@ function renderModbusRegisters(plant, liveData) {
 
     const dot = document.getElementById('mb-dot');
     dot.className = 'modbus-status-dot ' + (liveData ? 'active' : '');
-    document.getElementById('mb-addr').innerText    = '0.0.0.0:5020 · Unit ID 1';
+    document.getElementById('mb-addr').innerText    = `${systemConfig.modbus_host || '0.0.0.0'}:${systemConfig.modbus_port} · Unit ID 1`;
     document.getElementById('mb-plant-id').innerText = plant.id;
 
     const plantRegs = modbusInfo.filter(r => r.plant_id === plant.id);
@@ -447,16 +580,26 @@ function renderModbusRegisters(plant, liveData) {
 
     plantRegs.forEach(reg => {
         const varName = detectVar(reg.description);
-        const varInfo = VAR_MAP[varName];
+        const varInfo = varName ? VAR_MAP[varName] : null;
         let raw = '—', decoded = '—', rowClass = '';
 
         if (liveData) {
+            const varName = detectVar(reg.description);
+            if (!varName) { raw = '—'; decoded = '—'; rowClass = ''; }
+            else {
+            const varInfo = VAR_MAP[varName];
             const rv = liveData[varInfo.key];
             if (rv !== undefined && rv !== null) {
-                if (varName === 'Status') {
+                if (varInfo.regs === 1) {
                     raw      = rv;
-                    decoded  = rv === 1 ? '1 (Running)' : '0 (Stopped)';
-                    rowClass = rv === 1 ? 'mb-row-ok' : 'mb-row-warn';
+                    if (varName === 'Inverter status') {
+                        const STATUS = ['Stop','Run','Fault','Curtailed','Starting','MPPT'];
+                        decoded  = `${rv} (${STATUS[rv] || rv})`;
+                        rowClass = (rv === 1 || rv === 5) ? 'mb-row-ok' : 'mb-row-warn';
+                    } else {
+                        decoded = rv;
+                        rowClass = 'mb-row-ok';
+                    }
                 } else {
                     const { high, low } = floatToWords(rv);
                     raw     = `0x${high.toString(16).padStart(4,'0').toUpperCase()} / 0x${low.toString(16).padStart(4,'0').toUpperCase()}`;
@@ -464,32 +607,34 @@ function renderModbusRegisters(plant, liveData) {
                     rowClass = 'mb-row-ok';
                 }
             }
+            }
         }
 
         const badge = rowClass === 'mb-row-ok'
             ? '<span class="badge bg-success-subtle text-success-emphasis border border-success small">OK</span>'
             : rowClass === 'mb-row-warn'
-            ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning small">STOPPED</span>'
+            ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning small">WARN</span>'
             : '<span class="badge bg-secondary small text-muted">—</span>';
 
-        // Encoding column: IEEE 754 float32 (2 regs) or u16 raw (1 reg)
-        const encLabel = varName === 'Status' ? 'u16 raw (1 reg)' : 'IEEE 754 f32 (2 regs)';
+        // Encoding column
+        const encLabel = varInfo ? (varInfo.regs === 1 ? 'u16 raw (1 reg)' : 'IEEE 754 f32 (2 regs)') : '—';
+        const unit     = varInfo ? varInfo.unit : '—';
 
         const tr = document.createElement('tr');
         tr.className = rowClass;
         tr.innerHTML = `
             <td><span class="reg-addr-badge">${reg.register_address}</span></td>
-            <td class="text-white">${varName}</td>
+            <td class="text-white">${varName || reg.description.split(' —')[0]}</td>
             <td class="text-muted font-monospace small">${encLabel}</td>
             <td class="text-end font-monospace text-secondary small">${raw}</td>
             <td class="text-end font-monospace text-info">${decoded}</td>
-            <td class="text-center text-muted small">${varInfo.unit}</td>
+            <td class="text-center text-muted small">${unit}</td>
             <td class="text-center">${badge}</td>`;
         tbody.appendChild(tr);
     });
 
-    // Python snippet
-    const baseAddr = plantRegs.length > 0 ? Math.min(...plantRegs.map(r => r.register_address)) : 0;
+    // Python snippet — derive base_address from first register for this plant
+    const baseAddr  = plantRegs.length > 0 ? Math.min(...plantRegs.map(r => r.register_address)) : 0;
     document.getElementById('mb-code-snippet').textContent = buildPythonSnippet(plant, plantRegs, baseAddr);
 }
 
@@ -498,31 +643,58 @@ function buildPythonSnippet(plant, regs, baseAddr) {
         `import struct`,
         `from pymodbus.client import ModbusTcpClient`,
         ``,
-        `# Plant: ${plant.name} (${plant.id})`,
-        `# All numeric values are IEEE 754 float32 packed in 2 consecutive u16 registers`,
-        `# (big-endian: high word first). Status is a single u16.`,
+        `# Plant: ${plant.name} (${plant.id}) — base_address = ${baseAddr}`,
+        `# Float32: 2 x u16 (IEEE 754 BE, high word first). u16: 1 register.`,
         `client = ModbusTcpClient('localhost', port=${systemConfig.modbus_port})`,
         `client.connect()`,
         ``,
-        `def read_float32(client, addr):`,
-        `    rr = client.read_holding_registers(addr, 2, unit=1)`,
+        `def read_f32(addr):`,
+        `    rr = client.read_holding_registers(addr, 2)`,
         `    if rr.isError(): return None`,
-        `    raw = (rr.registers[0] << 16) | rr.registers[1]`,
-        `    return struct.unpack('!f', struct.pack('!I', raw))[0]`,
+        `    return struct.unpack('!f', struct.pack('!I', (rr.registers[0]<<16)|rr.registers[1]))[0]`,
+        ``,
+        `def read_u16(addr):`,
+        `    rr = client.read_holding_registers(addr, 1)`,
+        `    return None if rr.isError() else rr.registers[0]`,
         ``,
     ];
-    regs.forEach(reg => {
-        const varName = detectVar(reg.description);
-        const vi      = VAR_MAP[varName];
-        if (varName === 'Status') {
-            lines.push(`# Status`);
-            lines.push(`rr = client.read_holding_registers(${reg.register_address}, 1, unit=1)`);
-            lines.push(`status = rr.registers[0] if not rr.isError() else None  # 1=Running, 0=Stopped`);
-        } else {
-            lines.push(`${varName.toLowerCase()} = read_float32(client, ${reg.register_address})  # ${vi.unit}`);
-        }
-    });
-    lines.push(``, `client.close()`);
+    // Group by category
+    const categories = {
+        'AC Output': regs.filter(r => r.register_address < baseAddr + 27),
+        'DC/MPPT':   regs.filter(r => {
+            const off = r.register_address - baseAddr;
+            return off >= 27 && off <= 36;
+        }),
+        'Thermal':   regs.filter(r => {
+            const off = r.register_address - baseAddr;
+            return off >= 37 && off <= 40;
+        }),
+        'Performance': regs.filter(r => {
+            const off = r.register_address - baseAddr;
+            return off >= 41 && off <= 52;
+        }),
+        'Safety':    regs.filter(r => {
+            const off = r.register_address - baseAddr;
+            return off >= 53 && off <= 56;
+        }),
+        'Energy':    regs.filter(r => r.register_address - baseAddr >= 57),
+    };
+    for (const [cat, catRegs] of Object.entries(categories)) {
+        if (catRegs.length === 0) continue;
+        lines.push(`# ── ${cat} ──`);
+        catRegs.forEach(reg => {
+            const varName = detectVar(reg.description);
+            const vi = varName ? VAR_MAP[varName] : null;
+            const safe  = (varName || reg.description.split(' —')[0]).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            if (vi && vi.regs === 1) {
+                lines.push(`${safe} = read_u16(${reg.register_address})  # ${vi.unit}`);
+            } else {
+                lines.push(`${safe} = read_f32(${reg.register_address})  # ${vi ? vi.unit : '?'}`);
+            }
+        });
+        lines.push(``);
+    }
+    lines.push(`client.close()`);
     return lines.join('\n');
 }
 
@@ -550,33 +722,19 @@ function renderPlantInfo(plant) {
         L.marker([plant.latitude, plant.longitude]).addTo(miniMap).bindPopup(plant.name).openPopup();
     }, 100);
 
-    // Modbus address boxes
+    // Modbus base address display
     const plantRegs = modbusInfo.filter(r => r.plant_id === plant.id);
-    const varIcons  = {
-        'Power':       'fa-bolt text-warning',
-        'Voltage':     'fa-plug text-info',
-        'Current':     'fa-water text-primary',
-        'Frequency':   'fa-wave-square text-success',
-        'Temperature': 'fa-thermometer-half text-danger',
-        'Status':      'fa-circle text-secondary',
-    };
+    const baseAddress = plantRegs.length > 0 ? Math.min(...plantRegs.map(r => r.register_address)) : '?';
     const mapping = document.getElementById('info-modbus-mapping');
     mapping.innerHTML = '';
-    plantRegs.forEach(reg => {
-        const varName = detectVar(reg.description);
-        const iconCls = varIcons[varName] || varIcons['Status'];
-        const col = document.createElement('div');
-        col.className = 'col-6 col-md-4 col-xl-2';
-        col.innerHTML = `
-            <div class="mb-addr-box">
-                <i class="fas ${iconCls} fa-fw"></i>
-                <div>
-                    <div class="mb-ab-label">${varName}</div>
-                    <div class="mb-ab-val">${reg.register_address}</div>
-                </div>
-            </div>`;
-        mapping.appendChild(col);
-    });
+    const col = document.createElement('div');
+    col.className = 'col-12';
+    col.innerHTML = `<div class="mb-addr-box d-inline-flex align-items-center gap-2">
+        <i class="fas fa-hashtag text-warning"></i>
+        <div><div class="mb-ab-label">Base Address</div><div class="mb-ab-val">${baseAddress}</div></div>
+    </div>
+    <span class="text-muted small ms-3">→ 33 variables mapped at base+offset (63 contiguous registers per plant)</span>`;
+    mapping.appendChild(col);
 }
 
 // ============================================================
