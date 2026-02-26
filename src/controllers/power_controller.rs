@@ -96,22 +96,22 @@ pub async fn get_modbus_info(State(config): State<Config>) -> impl IntoResponse 
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.power_address,
             length: 1,
-            data_type: "u16 (scaled * 100)".to_string(),
-            description: format!("Power output for {} in centi-kW", p.name),
+            data_type: "u16 (integer kW)".to_string(),
+            description: format!("Power output for {} in kW (max 65535 kW)", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.voltage_address,
             length: 1,
             data_type: "u16 (scaled * 10)".to_string(),
-            description: format!("Voltage for {} in deci-V", p.name),
+            description: format!("Voltage for {} in deci-V (max 6553.5 V)", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.current_address,
             length: 1,
-            data_type: "u16 (scaled * 100)".to_string(),
-            description: format!("Current for {} in centi-A", p.name),
+            data_type: "u16 (scaled * 10)".to_string(),
+            description: format!("Current for {} in deci-A (max 6553.5 A)", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),

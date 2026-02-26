@@ -56,7 +56,8 @@ async fn main() {
                             data.weather_code,
                             data.is_day
                         );
-                        // println!("Updated plant {}: {} kW", plant_config.id, data.power_kw);
+                        println!("[UPDATE] Plant: {} | DC Power: {:.2} kW | Temp: {:.1}°C", 
+                                 plant_config.id, data.power_kw, data.temperature_c);
                     }
                     Err(e) => {
                         eprintln!("Error updating plant {}: {}", plant_config.id, e);
@@ -75,6 +76,13 @@ async fn main() {
     // Create register map from config
     let mut register_map = HashMap::new();
     for plant in &config.plants {
+        println!("[MODBUS MAP] Plant: {} -> Power@{}, Voltage@{}, Current@{}, Freq@{}, Temp@{}, Status@{}",
+                 plant.id, plant.modbus_mapping.power_address, 
+                 plant.modbus_mapping.voltage_address,
+                 plant.modbus_mapping.current_address,
+                 plant.modbus_mapping.frequency_address,
+                 plant.modbus_mapping.temperature_address,
+                 plant.modbus_mapping.status_address);
         register_map.insert(plant.modbus_mapping.power_address, (plant.id.clone(), modbus_server::VariableType::Power));
         register_map.insert(plant.modbus_mapping.voltage_address, (plant.id.clone(), modbus_server::VariableType::Voltage));
         register_map.insert(plant.modbus_mapping.current_address, (plant.id.clone(), modbus_server::VariableType::Current));

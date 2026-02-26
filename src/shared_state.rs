@@ -42,24 +42,30 @@ impl AppState {
 
             // AC Power Output
             let ac_power = power * efficiency;
-            data.power_kw = ac_power;
             
-            // Voltage
+            // Voltage (sempre stabile intorno a 230V per inverter grid-tied)
             let ac_load_factor = if nominal_power > 0.0 { ac_power / nominal_power } else { 0.0 };
-            let noise = (ac_power * 13.0).sin() * 0.5; 
+            let noise = if ac_power > 0.01 { (ac_power * 13.0).sin() * 0.5 } else { 0.0 };
             data.voltage_v = 230.0 + (ac_load_factor * 5.0) + noise;
             
             // Frequency
-            let freq_noise = (ac_power * 7.0).cos() * 0.05;
+            let freq_noise = if ac_power > 0.01 { (ac_power * 7.0).cos() * 0.05 } else { 0.0 };
             data.frequency_hz = 50.0 + freq_noise;
             
-            // Power Factor
-            let pf_base = 0.95 + 0.05 * (1.0 - (-10.0 * ac_load_factor).exp());
-            let pf_noise = (ac_power * 11.0).sin() * 0.005;
-            data.power_factor = (pf_base + pf_noise).min(1.0).max(0.8);
+            // Power Factor (solo se c'è potenza significativa)
+            if ac_power > 0.01 {
+                let pf_base = 0.95 + 0.05 * (1.0 - (-10.0 * ac_load_factor).exp());
+                let pf_noise = (ac_power * 11.0).sin() * 0.005;
+                data.power_factor = (pf_base + pf_noise).min(1.0).max(0.8);
+            } else {
+                data.power_factor = 1.0; // Unity power factor quando non c'è potenza
+            }
+
+            // Active Power (settato DOPO il power factor)
+            data.power_kw = ac_power;
 
             // Apparent Power
-            if data.power_factor > 0.0 {
+            if ac_power > 0.01 && data.power_factor > 0.0 {
                 data.apparent_power_kva = ac_power / data.power_factor;
             } else {
                 data.apparent_power_kva = ac_power;
@@ -69,17 +75,21 @@ impl AppState {
             let q_sq = data.apparent_power_kva.powi(2) - ac_power.powi(2);
             data.reactive_power_kvar = if q_sq > 0.0 { q_sq.sqrt() } else { 0.0 };
 
-            // Current
-            data.current_a = if data.voltage_v > 0.0 {
-                (data.apparent_power_kva * 1000.0) / data.voltage_v
+            // Current - sempre positiva
+            if ac_power > 0.01 && data.voltage_v > 0.0 {
+                data.current_a = (data.apparent_power_kva * 1000.0) / data.voltage_v;
             } else {
-                0.0
-            };
+                data.current_a = 0.0;
+            }
             
             data.status = if ac_power > 0.001 { 1 } else { 0 }; 
 
             // Energy
-            data.daily_energy_kwh += ac_power * (5.0 / 3600.0); 
+            data.daily_energy_kwh += ac_power * (5.0 / 3600.0);
+            
+            // Debug log for verification
+            println!("[STATE UPDATE] Plant: {} | AC Power: {:.2} kW | Current: {:.2} A | Voltage: {:.1} V | PF: {:.3}", 
+                     plant_id, data.power_kw, data.current_a, data.voltage_v, data.power_factor);
         }
     }
 

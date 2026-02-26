@@ -187,11 +187,11 @@ Each plant requires Modbus register addresses for the following metrics:
 
 | Register | Data Type | Unit | Description |
 |----------|-----------|------|-------------|
-| `power_address` | Float32 | kW | Current power output |
-| `voltage_address` | Float32 | V | AC voltage |
-| `current_address` | Float32 | A | AC current |
-| `frequency_address` | Float32 | Hz | AC frequency |
-| `temperature_address` | Float32 | °C | Panel temperature |
+| `power_address` | UInt16 | kW | Current power output (integer kW, max 65535 kW) |
+| `voltage_address` | UInt16 | deci-V | AC voltage (scaled ×10, max 6553.5 V) |
+| `current_address` | UInt16 | deci-A | AC current (scaled ×10, max 6553.5 A) |
+| `frequency_address` | UInt16 | centi-Hz | AC frequency (scaled ×100, max 655.35 Hz) |
+| `temperature_address` | UInt16 | deci-°C | Panel temperature (scaled ×10, max 6553.5 °C) |
 | `status_address` | UInt16 | - | Plant status (0=stopped, 1=running) |
 
 ### Example Configurations
@@ -415,32 +415,39 @@ The simulator includes a Modbus TCP server for integration with industrial SCADA
 
 ### Register Layout
 
-Each plant has its data mapped to Modbus holding registers as defined in `config.json`. Registers store 32-bit floating-point values (occupying 2 consecutive registers each) or 16-bit unsigned integers.
+Each plant has its data mapped to Modbus holding registers as defined in `config.json`. Registers store 16-bit unsigned integers with appropriate scaling factors.
 
 #### Data Types
 
-| Metric | Modbus Type | Registers | Unit |
-|--------|-------------|-----------|------|
-| Power | Float32 | 2 | kW |
-| Voltage | Float32 | 2 | V |
-| Current | Float32 | 2 | A |
-| Frequency | Float32 | 2 | Hz |
-| Temperature | Float32 | 2 | °C |
-| Status | UInt16 | 1 | 0 or 1 |
+| Metric | Modbus Type | Registers | Scaling | Unit | Max Value |
+|--------|-------------|-----------|---------|------|----------|
+| Power | UInt16 | 1 | ×1 | kW | 65535 kW (65.5 MW) |
+| Voltage | UInt16 | 1 | ×10 | deci-V | 6553.5 V |
+| Current | UInt16 | 1 | ×10 | deci-A | 6553.5 A |
+| Frequency | UInt16 | 1 | ×100 | centi-Hz | 655.35 Hz |
+| Temperature | UInt16 | 1 | ×10 | deci-°C | 6553.5 °C |
+| Status | UInt16 | 1 | (none) | - | 0 or 1 |
+
+**Decoding Examples:**
+- Power register = 5432 → **5432 kW**
+- Voltage register = 2300 → **230.0 V** (2300 ÷ 10)
+- Current register = 215 → **21.5 A** (215 ÷ 10)
+- Frequency register = 5000 → **50.00 Hz** (5000 ÷ 100)
+- Temperature register = 352 → **35.2 °C** (352 ÷ 10)
 
 #### Example Register Map (Plant 1)
 
 Based on default configuration:
 
 ```
-Address  | Metric           | Type    | Value Example
----------|------------------|---------|---------------
-0-1      | Power (kW)       | Float32 | 650.5
-2-3      | Voltage (V)      | Float32 | 400.2
-4-5      | Current (A)      | Float32 | 1626.7
-6-7      | Frequency (Hz)   | Float32 | 50.0
-8-9      | Temperature (°C) | Float32 | 35.2
-10       | Status           | UInt16  | 1 (running)
+Address  | Metric           | Type    | Raw Value | Decoded Value
+---------|------------------|---------|-----------|---------------
+0        | Power (kW)       | UInt16  | 5432      | 5432 kW
+1        | Voltage (V)      | UInt16  | 2320      | 232.0 V
+2        | Current (A)      | UInt16  | 234       | 23.4 A
+3        | Frequency (Hz)   | UInt16  | 5000      | 50.00 Hz
+4        | Temperature (°C) | UInt16  | 352       | 35.2 °C
+5        | Status           | UInt16  | 1         | 1 (running)
 ```
 
 ### Connecting with Modbus Clients
@@ -454,10 +461,23 @@ from pymodbus.client import ModbusTcpClient
 client = ModbusTcpClient('localhost', port=5020)
 client.connect()
 
-# Read power (registers 0-1)
-result = client.read_holding_registers(address=0, count=2, slave=1)
-power_kw = struct.unpack('>f', struct.pack('>HH', *result.registers))[0]
-print(f"Power: {power_kw} kW")
+# Read plant_1 data (addresses 0-5)
+result = client.read_holding_registers(address=0, count=6, slave=1)
+
+if not result.isError():
+    power_kw = result.registers[0]  # Direct kW value
+    voltage_v = result.registers[1] / 10.0  # Decode deci-V
+    current_a = result.registers[2] / 10.0  # Decode deci-A
+    frequency_hz = result.registers[3] / 100.0  # Decode centi-Hz
+    temperature_c = result.registers[4] / 10.0  # Decode deci-°C
+    status = result.registers[5]  # 0 or 1
+    
+    print(f"Power: {power_kw} kW")
+    print(f"Voltage: {voltage_v} V")
+    print(f"Current: {current_a} A")
+    print(f"Frequency: {frequency_hz} Hz")
+    print(f"Temperature: {temperature_c} °C")
+    print(f"Status: {'Running' if status == 1 else 'Stopped'}")
 
 client.close()
 ```
@@ -469,7 +489,7 @@ client.close()
   {
     "id": "modbus-read",
     "type": "modbus-read",
-    "name": "Read Solar Power",
+    "name": "Read Solar Data",
     "topic": "",
     "showStatusActivities": true,
     "logIOActivities": false,
@@ -477,9 +497,16 @@ client.close()
     "unitid": "1",
     "dataType": "HoldingRegister",
     "adr": "0",
-    "quantity": "2",
+    "quantity": "6",
     "rate": "5000",
     "server": "modbus-server"
+  },
+  {
+    "id": "decode-function",
+    "type": "function",
+    "name": "Decode Values",
+    "func": "msg.payload = {\n  power_kw: msg.payload[0],\n  voltage_v: msg.payload[1] / 10.0,\n  current_a: msg.payload[2] / 10.0,\n  frequency_hz: msg.payload[3] / 100.0,\n  temperature_c: msg.payload[4] / 10.0,\n  status: msg.payload[5]\n};\nreturn msg;",
+    "outputs": 1
   }
 ]
 ```

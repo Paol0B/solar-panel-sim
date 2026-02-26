@@ -1,40 +1,85 @@
-// Global State
-let plants = [];
-let currentPlantId = null;
-let currentPlantTimezone = 'UTC';
-let map = null;
-let markers = {};
-let powerChart = null;
-let updateInterval = null;
+// ============================================================
+//  Solar SCADA — app.js  (UI v3)
+// ============================================================
 
-// Initialize
+// ---- State ----
+let plants             = [];
+let currentPlantId     = null;
+let currentPlantTimezone = 'UTC';
+let map                = null;
+let markers            = {};
+let miniMap            = null;
+let powerChart         = null;
+let updateInterval     = null;
+let modbusInfo         = [];
+let chartData          = [];   // { time, kw }[]
+
+// ---- Bootstrap ----
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
     initChart();
+    fetchModbusInfo();
     fetchPlants();
     startClock();
-    
-    // Global update loop (every 5 seconds)
+
+    document.getElementById('plant-search').addEventListener('input', filterPlantList);
+    document.querySelectorAll('.detail-tab').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
     setInterval(updateGlobalData, 5000);
 });
 
+// ============================================================
+//  CLOCK
+// ============================================================
 function startClock() {
-    setInterval(() => {
-        const now = new Date();
-        document.getElementById('clock').innerText = now.toLocaleTimeString();
-    }, 1000);
+    const el = document.getElementById('clock');
+    setInterval(() => { el.innerText = new Date().toLocaleTimeString(); }, 1000);
 }
 
+// ============================================================
+//  MAIN MAP
+// ============================================================
 function initMap() {
-    // Dark mode map tiles
     map = L.map('map').setView([45.0, 10.0], 5);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 19
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd', maxZoom: 19
     }).addTo(map);
 }
 
+function renderMapMarkers() {
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    markers = {};
+    plants.forEach(plant => {
+        const m = L.marker([plant.latitude, plant.longitude])
+            .addTo(map)
+            .bindPopup(`<b>${plant.name}</b><br>Nominal: ${plant.nominal_power_kw.toLocaleString()} kW<br>
+                <button class="btn btn-sm btn-warning mt-2" onclick="selectPlant('${plant.id}')">View Details</button>`);
+        markers[plant.id] = m;
+    });
+    if (plants.length > 0) {
+        const group = new L.featureGroup(Object.values(markers));
+        map.fitBounds(group.getBounds().pad(0.15));
+    }
+}
+
+function showMap() {
+    currentPlantId = null;
+    if (updateInterval) { clearInterval(updateInterval); updateInterval = null; }
+    if (miniMap) { miniMap.remove(); miniMap = null; }
+    document.getElementById('map-view').classList.remove('d-none');
+    const dv = document.getElementById('detail-view');
+    dv.classList.add('d-none');
+    dv.classList.remove('d-flex');
+    document.querySelectorAll('.plant-item').forEach(el => el.classList.remove('active'));
+    setTimeout(() => map.invalidateSize(), 100);
+}
+
+// ============================================================
+//  CHART
+// ============================================================
 function initChart() {
     const ctx = document.getElementById('powerChart').getContext('2d');
     powerChart = new Chart(ctx, {
@@ -42,37 +87,48 @@ function initChart() {
         data: {
             labels: [],
             datasets: [{
-                label: 'Power Output (kW)',
+                label: 'Active Power (kW)',
                 data: [],
                 borderColor: '#ffc107',
-                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                backgroundColor: 'rgba(255,193,7,0.08)',
                 borderWidth: 2,
                 fill: true,
-                tension: 0.4
+                tension: 0.4,
+                pointRadius: 2
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                x: {
-                    grid: { color: '#333' },
-                    ticks: { color: '#888' }
-                },
-                y: {
-                    grid: { color: '#333' },
-                    ticks: { color: '#888' },
-                    beginAtZero: true
-                }
+                x: { grid: { color: '#1e2336' }, ticks: { color: '#5a6380', font: { size: 10 } } },
+                y: { grid: { color: '#1e2336' }, ticks: { color: '#5a6380', font: { size: 10 } }, beginAtZero: true }
             },
-            plugins: {
-                legend: { labels: { color: '#fff' } }
-            },
+            plugins: { legend: { labels: { color: '#8892ab', font: { size: 11 } } } },
             animation: false
         }
     });
 }
 
+function updateChart(kw, timeLabel) {
+    const MAX_POINTS = 30;
+    chartData.push({ time: timeLabel, kw });
+    if (chartData.length > MAX_POINTS) chartData.shift();
+    if (powerChart) {
+        powerChart.data.labels = chartData.map(d => d.time);
+        powerChart.data.datasets[0].data = chartData.map(d => d.kw);
+        powerChart.update('none');
+    }
+    const peak = Math.max(...chartData.map(d => d.kw));
+    const avg  = chartData.reduce((s, d) => s + d.kw, 0) / chartData.length;
+    document.getElementById('chart-peak').innerText    = `${peak.toFixed(2)} kW`;
+    document.getElementById('chart-avg').innerText     = `${avg.toFixed(2)} kW`;
+    document.getElementById('chart-samples').innerText = chartData.length;
+}
+
+// ============================================================
+//  PLANT LIST
+// ============================================================
 async function fetchPlants() {
     try {
         const res = await fetch('/api/plants');
@@ -80,217 +136,391 @@ async function fetchPlants() {
         renderPlantList();
         renderMapMarkers();
         updateGlobalData();
-    } catch (e) {
-        console.error("Failed to fetch plants", e);
-    }
+    } catch (e) { console.error('fetchPlants:', e); }
 }
 
 function renderPlantList() {
     const list = document.getElementById('plant-list');
     list.innerHTML = '';
-    
     plants.forEach(plant => {
         const div = document.createElement('div');
-        div.className = 'plant-item p-3 border-bottom border-secondary';
+        div.className = 'plant-item';
         div.dataset.id = plant.id;
         div.onclick = () => selectPlant(plant.id);
         div.innerHTML = `
-            <div class="d-flex justify-content-between">
-                <span class="fw-bold text-white">${plant.name}</span>
-                <span class="badge bg-secondary" id="list-power-${plant.id}">-- kW</span>
-            </div>
-            <small class="text-muted">${plant.id}</small>
-        `;
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="d-flex gap-2 align-items-start">
+                    <div class="plant-status-dot mt-1" id="dot-${plant.id}" style="background:#6b7280"></div>
+                    <div>
+                        <div class="plant-item-name">${plant.name}</div>
+                        <div class="plant-item-id">${plant.id}</div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <div class="plant-item-power text-warning" id="list-power-${plant.id}">— kW</div>
+                    <div class="plant-item-sub">${plant.nominal_power_kw.toLocaleString()} kW nominal</div>
+                </div>
+            </div>`;
         list.appendChild(div);
     });
-    
-    document.getElementById('total-plants-count').innerText = plants.length;
+    document.getElementById('sb-plant-count').innerText = plants.length;
+    document.getElementById('sb-total').innerText        = plants.length;
+    document.getElementById('map-total').innerText       = plants.length;
 }
 
-function renderMapMarkers() {
-    plants.forEach(plant => {
-        const marker = L.marker([plant.latitude, plant.longitude])
-            .addTo(map)
-            .bindPopup(`<b>${plant.name}</b><br>Capacity: ${plant.nominal_power_kw} kW<br><button class="btn btn-sm btn-primary mt-2" onclick="selectPlant('${plant.id}')">View Details</button>`);
-        markers[plant.id] = marker;
+function filterPlantList() {
+    const q = document.getElementById('plant-search').value.toLowerCase().trim();
+    document.querySelectorAll('.plant-item').forEach(item => {
+        const plant = plants.find(p => p.id === item.dataset.id);
+        const match = !q || plant.name.toLowerCase().includes(q) || plant.id.toLowerCase().includes(q);
+        item.style.display = match ? '' : 'none';
     });
-    
-    // Fit bounds if plants exist
-    if (plants.length > 0) {
-        const group = new L.featureGroup(Object.values(markers));
-        map.fitBounds(group.getBounds().pad(0.1));
-    }
 }
 
+// ============================================================
+//  GLOBAL DATA POLLING
+// ============================================================
 async function updateGlobalData() {
     try {
         const res = await fetch('/api/power/global');
         const data = await res.json();
-        
-        let totalPower = 0;
-        let activeCount = 0;
-        
+        let totalPower = 0, activeCount = 0;
         for (const [id, power] of Object.entries(data)) {
             totalPower += power;
             if (power > 0.1) activeCount++;
-            
-            // Update list item
             const el = document.getElementById(`list-power-${id}`);
             if (el) {
-                el.innerText = `${power.toFixed(2)} kW`;
-                el.className = power > 0.1 ? 'badge bg-success' : 'badge bg-secondary';
+                el.innerText    = fmtPower(power);
+                el.className    = 'plant-item-power ' + (power > 0.1 ? 'text-success' : 'text-muted');
             }
+            const dot = document.getElementById(`dot-${id}`);
+            if (dot) dot.style.background = power > 0.1 ? '#22c55e' : '#6b7280';
         }
-        
-        document.getElementById('total-power').innerText = `${totalPower.toFixed(2)} kW`;
-        document.getElementById('active-plants-count').innerText = activeCount;
-        
-    } catch (e) {
-        console.error("Error updating global data", e);
-    }
+        document.getElementById('sb-total-power').innerText  = fmtPower(totalPower);
+        document.getElementById('sb-active').innerText       = activeCount;
+        document.getElementById('map-active').innerText      = activeCount;
+        document.getElementById('map-total-power').innerText = fmtPower(totalPower);
+        const effEst = activeCount > 0 ? Math.round(activeCount / plants.length * 85) : 0;
+        document.getElementById('map-avg-eff').innerText = activeCount > 0 ? `${effEst}%` : '—%';
+        document.getElementById('sb-last-update').innerText  = new Date().toLocaleTimeString();
+    } catch (e) { console.error('updateGlobalData:', e); }
 }
 
+// ============================================================
+//  SELECT PLANT → DETAIL VIEW
+// ============================================================
 function selectPlant(id) {
     currentPlantId = id;
     const plant = plants.find(p => p.id === id);
     if (!plant) return;
-    
-    // UI Switch
+
     document.getElementById('map-view').classList.add('d-none');
-    document.getElementById('detail-view').classList.remove('d-none');
-    
-    // Highlight list item
+    const dv = document.getElementById('detail-view');
+    dv.classList.remove('d-none');
+    dv.classList.add('d-flex');
+
     document.querySelectorAll('.plant-item').forEach(el => el.classList.remove('active'));
     const activeItem = document.querySelector(`.plant-item[data-id="${id}"]`);
     if (activeItem) activeItem.classList.add('active');
-    
-    // Set static details
-    document.getElementById('detail-name').innerText = plant.name;
-    document.getElementById('detail-id').innerText = `ID: ${plant.id}`;
-    document.getElementById('detail-nominal').innerText = `${plant.nominal_power_kw} kW`;
-    document.getElementById('detail-location').innerText = `${plant.latitude.toFixed(4)}, ${plant.longitude.toFixed(4)}`;
-    
-    // Store timezone for clock
+
+    document.getElementById('detail-name').innerText    = plant.name;
+    document.getElementById('detail-id').innerText      = plant.id;
+    document.getElementById('detail-nominal').innerText = plant.nominal_power_kw.toLocaleString();
     currentPlantTimezone = plant.timezone || 'UTC';
-    
-    // Clear chart
-    powerChart.data.labels = [];
-    powerChart.data.datasets[0].data = [];
-    powerChart.update();
-    
-    // Start polling for this plant
+
+    chartData = [];
+    if (powerChart) {
+        powerChart.data.labels = [];
+        powerChart.data.datasets[0].data = [];
+        powerChart.update();
+    }
+
+    switchTab('tab-kpi');
+    renderModbusRegisters(plant, null);
+    renderPlantInfo(plant);
+
     if (updateInterval) clearInterval(updateInterval);
-    fetchPlantDetail(); // Immediate
-    updateInterval = setInterval(fetchPlantDetail, 2000); // Fast polling for detail view
+    fetchPlantDetail();
+    updateInterval = setInterval(fetchPlantDetail, 2000);
 }
 
-function showMap() {
-    currentPlantId = null;
-    if (updateInterval) clearInterval(updateInterval);
-    
-    document.getElementById('map-view').classList.remove('d-none');
-    document.getElementById('detail-view').classList.add('d-none');
-    document.querySelectorAll('.plant-item').forEach(el => el.classList.remove('active'));
-    
-    // Refresh map size
-    map.invalidateSize();
+// ============================================================
+//  TABS
+// ============================================================
+function switchTab(tabId) {
+    document.querySelectorAll('.detail-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('d-none', panel.id !== tabId);
+    });
 }
 
+// ============================================================
+//  FETCH PLANT DETAIL (2s poll)
+// ============================================================
 async function fetchPlantDetail() {
     if (!currentPlantId) return;
-    
     try {
         const res = await fetch(`/api/plants/${currentPlantId}/power`);
         if (!res.ok) return;
-        
         const json = await res.json();
-        const data = json.data; // PlantData
-        const ts = new Date(json.timestamp);
-        
-        // Update Cards
-        document.getElementById('detail-power').innerText = `${data.power_kw.toFixed(2)} kW`;
-        document.getElementById('detail-voltage').innerText = `${data.voltage_v.toFixed(1)} V`;
-        document.getElementById('detail-current').innerText = `${data.current_a.toFixed(2)} A`;
-        document.getElementById('detail-frequency').innerText = `${data.frequency_hz.toFixed(2)} Hz`;
-        document.getElementById('detail-temp').innerText = `${data.temperature_c.toFixed(1)} °C`;
-        
-        // New fields
-        if (document.getElementById('detail-pf')) {
-            document.getElementById('detail-pf').innerText = `${data.power_factor.toFixed(2)}`;
-        }
-        if (document.getElementById('detail-apparent')) {
-            document.getElementById('detail-apparent').innerText = `${data.apparent_power_kva.toFixed(2)} kVA`;
-        }
-        if (document.getElementById('detail-reactive')) {
-            document.getElementById('detail-reactive').innerText = `${data.reactive_power_kvar.toFixed(2)} kvar`;
+        const d    = json.data;
+        const ts   = new Date(json.timestamp);
+        const plant = plants.find(p => p.id === currentPlantId);
+        const nominal = plant ? plant.nominal_power_kw : 1;
+
+        // Power
+        document.getElementById('detail-power').innerText = `${d.power_kw.toFixed(2)} kW`;
+        const pct = Math.min(100, (d.power_kw / nominal) * 100);
+        document.getElementById('detail-power-bar').style.width = `${pct.toFixed(1)}%`;
+        document.getElementById('detail-power-pct').innerText   = `${pct.toFixed(1)}% of nominal`;
+
+        // Voltage & Current
+        document.getElementById('detail-voltage').innerText = `${d.voltage_v.toFixed(1)} V`;
+        document.getElementById('detail-current').innerText = `${d.current_a.toFixed(2)} A`;
+
+        // Frequency with status
+        document.getElementById('detail-frequency').innerText = `${d.frequency_hz.toFixed(2)} Hz`;
+        const freqStatus = document.getElementById('detail-freq-status');
+        if (d.frequency_hz >= 49.5 && d.frequency_hz <= 50.5) {
+            freqStatus.innerHTML = '<span class="text-success small">OK — nominal</span>';
+        } else if (d.frequency_hz < 48 || d.frequency_hz > 52) {
+            freqStatus.innerHTML = '<span class="text-danger small">OUT OF RANGE</span>';
+        } else {
+            freqStatus.innerHTML = '<span class="text-warning small">WARNING</span>';
         }
 
-        if (document.getElementById('detail-efficiency')) {
-            document.getElementById('detail-efficiency').innerText = `${data.efficiency_percent.toFixed(1)} %`;
-        }
-        if (document.getElementById('detail-energy')) {
-            document.getElementById('detail-energy').innerText = `${data.daily_energy_kwh.toFixed(2)} kWh`;
-        }
-        
-        // Update Local Time
-        const now = new Date();
+        // Temperature (colour-coded)
+        const tempEl = document.getElementById('detail-temp-col');
+        tempEl.innerText  = `${d.temperature_c.toFixed(1)} °C`;
+        tempEl.className  = 'kpi-card-val ' + (d.temperature_c > 60 ? 'text-danger' : d.temperature_c > 40 ? 'text-warning' : 'text-success');
+
+        // Efficiency
+        const eff = d.efficiency_percent || 0;
+        document.getElementById('detail-efficiency').innerText    = `${eff.toFixed(1)} %`;
+        document.getElementById('detail-eff-bar').style.width     = `${Math.min(100, eff).toFixed(1)}%`;
+
+        // Power Factor
+        const pf = d.power_factor || 0;
+        document.getElementById('detail-pf').innerText        = pf.toFixed(3);
+        document.getElementById('detail-pf-bar').style.width  = `${(Math.abs(pf) * 100).toFixed(1)}%`;
+
+        // Daily Energy
+        document.getElementById('detail-energy').innerText = `${d.daily_energy_kwh.toFixed(2)} kWh`;
+
+        // Power Triangle
+        document.getElementById('pt-active').innerText   = `${d.power_kw.toFixed(2)} kW`;
+        document.getElementById('pt-apparent').innerText = `${d.apparent_power_kva.toFixed(2)} kVA`;
+        document.getElementById('pt-reactive').innerText = `${d.reactive_power_kvar.toFixed(2)} kvar`;
+
+        // Local time
         try {
-            const localTime = new Intl.DateTimeFormat('en-US', {
+            const local = new Intl.DateTimeFormat('en-GB', {
                 timeZone: currentPlantTimezone,
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
-            }).format(now);
-            document.getElementById('detail-local-time').innerText = `${localTime} (${currentPlantTimezone})`;
-        } catch (e) {
-            document.getElementById('detail-local-time').innerText = "--:--";
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+            }).format(new Date());
+            document.getElementById('detail-local-time').innerText = `${local} (${currentPlantTimezone})`;
+        } catch (_) { document.getElementById('detail-local-time').innerText = '--:--'; }
+
+        // Weather icon
+        let icon = 'fa-sun', iconCls = 'text-warning';
+        if (!d.is_day) { icon = 'fa-moon'; iconCls = 'text-light'; }
+        else if (d.weather_code > 3 && d.weather_code <= 50) { icon = 'fa-cloud-sun'; iconCls = 'text-info'; }
+        else if (d.weather_code > 50) { icon = 'fa-cloud-rain'; iconCls = 'text-primary'; }
+        document.getElementById('weather-icon-container').innerHTML = `<i class="fas ${icon} fa-2x ${iconCls}"></i>`;
+
+        // Status badge & solar array
+        const statusEl = document.getElementById('detail-status');
+        if (d.status === 1) {
+            statusEl.innerText = 'RUNNING'; statusEl.className = 'badge bg-success fs-6';
+            document.getElementById('sun-visual').style.opacity = '1';
+            document.querySelectorAll('.panel').forEach(p => p.classList.add('active'));
+        } else {
+            statusEl.innerText = 'STOPPED'; statusEl.className = 'badge bg-secondary fs-6';
+            document.getElementById('sun-visual').style.opacity = '0.15';
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         }
 
-        // Update Weather Icon
-        const iconContainer = document.getElementById('weather-icon-container');
-        let iconClass = 'fa-sun';
-        let iconColor = 'text-warning';
-        
-        if (!data.is_day) {
-            iconClass = 'fa-moon';
-            iconColor = 'text-light';
-        } else if (data.weather_code > 3) {
-            iconClass = 'fa-cloud-sun';
-            iconColor = 'text-info';
-            if (data.weather_code > 50) {
-                iconClass = 'fa-cloud-rain';
-                iconColor = 'text-primary';
+        // Live Modbus update
+        renderModbusRegisters(plant, d);
+
+        // Chart
+        updateChart(d.power_kw, ts.toLocaleTimeString());
+
+    } catch (e) { console.error('fetchPlantDetail:', e); }
+}
+
+// ============================================================
+//  MODBUS TAB
+// ============================================================
+async function fetchModbusInfo() {
+    try {
+        const res = await fetch('/api/modbus/info');
+        modbusInfo = await res.json();
+    } catch (e) { console.error('fetchModbusInfo:', e); }
+}
+
+const VAR_MAP = {
+    'Power':       { key: 'power_kw',       factor: 1,   unit: 'kW',  scaling: '÷1'   },
+    'Voltage':     { key: 'voltage_v',       factor: 10,  unit: 'V',   scaling: '÷10'  },
+    'Current':     { key: 'current_a',       factor: 10,  unit: 'A',   scaling: '÷10'  },
+    'Frequency':   { key: 'frequency_hz',    factor: 100, unit: 'Hz',  scaling: '÷100' },
+    'Temperature': { key: 'temperature_c',   factor: 10,  unit: '°C',  scaling: '÷10'  },
+    'Status':      { key: 'status',          factor: 1,   unit: '—',   scaling: 'raw'  },
+};
+
+function detectVar(desc) {
+    for (const name of Object.keys(VAR_MAP)) {
+        if (desc.toLowerCase().includes(name.toLowerCase())) return name;
+    }
+    return 'Status';
+}
+
+function renderModbusRegisters(plant, liveData) {
+    if (!plant) return;
+
+    const dot = document.getElementById('mb-dot');
+    dot.className = 'modbus-status-dot ' + (liveData ? 'active' : '');
+    document.getElementById('mb-addr').innerText    = '0.0.0.0:5020 · Unit ID 1';
+    document.getElementById('mb-plant-id').innerText = plant.id;
+
+    const plantRegs = modbusInfo.filter(r => r.plant_id === plant.id);
+    document.getElementById('mb-reg-count').innerText = `${plantRegs.length} registers`;
+
+    const tbody = document.getElementById('mb-register-tbody');
+    tbody.innerHTML = '';
+
+    if (plantRegs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3 small">No modbus data for this plant</td></tr>';
+    }
+
+    plantRegs.forEach(reg => {
+        const varName = detectVar(reg.description);
+        const varInfo = VAR_MAP[varName];
+        let raw = '—', decoded = '—', rowClass = '';
+
+        if (liveData) {
+            const rv = liveData[varInfo.key];
+            if (rv !== undefined && rv !== null) {
+                const rawNum = Math.min(65535, Math.max(0, Math.round(rv * varInfo.factor)));
+                raw  = rawNum;
+                if (varName === 'Status') {
+                    decoded  = rv === 1 ? '1 (Running)' : '0 (Stopped)';
+                    rowClass = rv === 1 ? 'mb-row-ok' : 'mb-row-warn';
+                } else {
+                    decoded  = (rawNum / varInfo.factor).toFixed(varInfo.factor >= 100 ? 2 : 1);
+                    rowClass = 'mb-row-ok';
+                }
             }
         }
-        
-        iconContainer.innerHTML = `<i class="fas ${iconClass} fa-2x ${iconColor}"></i>`;
 
-        const statusEl = document.getElementById('detail-status');
-        if (data.status === 1) {
-            statusEl.innerText = "RUNNING";
-            statusEl.className = "badge bg-success fs-6 pulse";
-            document.getElementById('sun-visual').style.opacity = '1';
+        const badge = rowClass === 'mb-row-ok'
+            ? '<span class="badge bg-success-subtle text-success-emphasis border border-success small">OK</span>'
+            : rowClass === 'mb-row-warn'
+            ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning small">STOPPED</span>'
+            : '<span class="badge bg-secondary small text-muted">—</span>';
+
+        const tr = document.createElement('tr');
+        tr.className = rowClass;
+        tr.innerHTML = `
+            <td><span class="reg-addr-badge">${reg.register_address}</span></td>
+            <td class="text-white">${varName}</td>
+            <td class="text-muted font-monospace small">${varInfo.scaling} <small class="text-secondary">${reg.data_type}</small></td>
+            <td class="text-end font-monospace text-secondary">${raw}</td>
+            <td class="text-end font-monospace text-info">${decoded}</td>
+            <td class="text-center text-muted small">${varInfo.unit}</td>
+            <td class="text-center">${badge}</td>`;
+        tbody.appendChild(tr);
+    });
+
+    // Python snippet
+    const baseAddr = plantRegs.length > 0 ? Math.min(...plantRegs.map(r => r.register_address)) : 0;
+    document.getElementById('mb-code-snippet').textContent = buildPythonSnippet(plant, plantRegs, baseAddr);
+}
+
+function buildPythonSnippet(plant, regs, baseAddr) {
+    const lines = [
+        `from pymodbus.client import ModbusTcpClient`,
+        ``,
+        `# Plant: ${plant.name} (${plant.id})`,
+        `client = ModbusTcpClient('localhost', port=5020)`,
+        `client.connect()`,
+        ``,
+        `rr = client.read_holding_registers(${baseAddr}, ${regs.length}, unit=1)`,
+        `if not rr.isError():`,
+    ];
+    regs.forEach(reg => {
+        const varName = detectVar(reg.description);
+        const vi      = VAR_MAP[varName];
+        const offset  = reg.register_address - baseAddr;
+        if (vi.factor > 1) {
+            lines.push(`    ${varName.toLowerCase()} = rr.registers[${offset}] / ${vi.factor}  # ${vi.unit}`);
         } else {
-            statusEl.innerText = "STOPPED";
-            statusEl.className = "badge bg-secondary fs-6";
-            document.getElementById('sun-visual').style.opacity = '0.2';
+            lines.push(`    ${varName.toLowerCase()} = rr.registers[${offset}]  # ${varName === 'Status' ? '1=Running, 0=Stopped' : vi.unit}`);
         }
-        
-        // Update Chart
-        const timeLabel = ts.toLocaleTimeString();
-        
-        // Keep last 20 points
-        if (powerChart.data.labels.length > 20) {
-            powerChart.data.labels.shift();
-            powerChart.data.datasets[0].data.shift();
-        }
-        
-        powerChart.data.labels.push(timeLabel);
-        powerChart.data.datasets[0].data.push(data.power_kw);
-        powerChart.update('none'); // 'none' mode for performance
-        
-    } catch (e) {
-        console.error("Error fetching detail", e);
-    }
+    });
+    lines.push(``, `client.close()`);
+    return lines.join('\n');
+}
+
+// ============================================================
+//  PLANT INFO TAB
+// ============================================================
+function renderPlantInfo(plant) {
+    document.getElementById('info-id').innerText      = plant.id;
+    document.getElementById('info-name').innerText    = plant.name;
+    document.getElementById('info-tz').innerText      = plant.timezone || 'UTC';
+    document.getElementById('info-nominal').innerText = `${plant.nominal_power_kw.toLocaleString()} kW`;
+    document.getElementById('info-lat').innerText     = plant.latitude.toFixed(6);
+    document.getElementById('info-lon').innerText     = plant.longitude.toFixed(6);
+
+    // Mini Leaflet map
+    const miniMapEl = document.getElementById('info-mini-map');
+    if (miniMap) { miniMap.remove(); miniMap = null; }
+    miniMapEl.innerHTML = '';
+    setTimeout(() => {
+        miniMap = L.map('info-mini-map', { zoomControl: false, attributionControl: false })
+            .setView([plant.latitude, plant.longitude], 8);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd', maxZoom: 18
+        }).addTo(miniMap);
+        L.marker([plant.latitude, plant.longitude]).addTo(miniMap).bindPopup(plant.name).openPopup();
+    }, 100);
+
+    // Modbus address boxes
+    const plantRegs = modbusInfo.filter(r => r.plant_id === plant.id);
+    const varIcons  = {
+        'Power':       'fa-bolt text-warning',
+        'Voltage':     'fa-plug text-info',
+        'Current':     'fa-water text-primary',
+        'Frequency':   'fa-wave-square text-success',
+        'Temperature': 'fa-thermometer-half text-danger',
+        'Status':      'fa-circle text-secondary',
+    };
+    const mapping = document.getElementById('info-modbus-mapping');
+    mapping.innerHTML = '';
+    plantRegs.forEach(reg => {
+        const varName = detectVar(reg.description);
+        const iconCls = varIcons[varName] || varIcons['Status'];
+        const col = document.createElement('div');
+        col.className = 'col-6 col-md-4 col-xl-2';
+        col.innerHTML = `
+            <div class="mb-addr-box">
+                <i class="fas ${iconCls} fa-fw"></i>
+                <div>
+                    <div class="mb-ab-label">${varName}</div>
+                    <div class="mb-ab-val">${reg.register_address}</div>
+                </div>
+            </div>`;
+        mapping.appendChild(col);
+    });
+}
+
+// ============================================================
+//  HELPERS
+// ============================================================
+function fmtPower(kw) {
+    if (kw >= 1000) return `${(kw / 1000).toFixed(2)} MW`;
+    return `${kw.toFixed(2)} kW`;
 }

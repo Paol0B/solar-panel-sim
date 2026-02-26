@@ -1,102 +1,499 @@
+/* ===== ROOT VARIABLES ===== */
 :root {
-    --scada-bg: #121212;
-    --scada-panel: #1e1e1e;
-    --scada-border: #333;
-    --scada-accent: #ffc107;
+    --scada-bg:       #0d0f14;
+    --scada-surface:  #141720;
+    --scada-card:     #1a1e2a;
+    --scada-border:   #272c3a;
+    --scada-accent:   #ffc107;
+    --scada-muted:    #4a5568;
+    --sidebar-w:      260px;
+    --navbar-h:       48px;
 }
+
+/* ===== RESET / BASE ===== */
+*, *::before, *::after { box-sizing: border-box; }
 
 body {
-    background-color: var(--scada-bg);
-    color: #e0e0e0;
+    background: var(--scada-bg);
+    color: #c9d1e9;
     font-family: 'Roboto', sans-serif;
-    overflow: hidden; /* Prevent full page scroll, handle in containers */
+    font-size: 13px;
+    overflow: hidden;
+    height: 100vh;
+    margin: 0;
 }
 
-.scada-font {
-    font-family: 'Orbitron', sans-serif;
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--scada-bg); }
+::-webkit-scrollbar-thumb { background: #2d3347; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3d4560; }
+
+/* ===== NAVBAR ===== */
+.scada-navbar {
+    height: var(--navbar-h);
+    background: var(--scada-surface);
+    border-bottom: 1px solid var(--scada-border);
+    flex-shrink: 0;
+    display: flex;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-}
-::-webkit-scrollbar-track {
-    background: var(--scada-bg); 
-}
-::-webkit-scrollbar-thumb {
-    background: #444; 
-    border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #555; 
+.scada-font { font-family: 'Orbitron', sans-serif; letter-spacing: 0.05em; }
+
+.badge-live {
+    background: rgba(25,135,84,0.15);
+    border: 1px solid rgba(25,135,84,0.5);
+    color: #6ee7b7;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: 0.1em;
+    animation: pulse-live 2.5s infinite;
 }
 
-/* Sidebar Plant Item */
+@keyframes pulse-live {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(25,135,84,0.4); }
+    50% { box-shadow: 0 0 6px 2px rgba(25,135,84,0.2); }
+}
+
+.nav-meta { font-size: 11px; color: #5a6380; }
+.nav-divider { width: 1px; height: 20px; background: var(--scada-border); }
+
+/* ===== APP SHELL ===== */
+.app-shell {
+    display: flex;
+    height: calc(100vh - var(--navbar-h));
+    overflow: hidden;
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--scada-surface);
+    border-right: 1px solid var(--scada-border);
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 12px;
+    border-bottom: 1px solid var(--scada-border);
+    background: var(--scada-surface);
+    flex-shrink: 0;
+}
+
+.fleet-kpi { gap: 8px; }
+
+.fleet-kpi-item {
+    background: var(--scada-card);
+    border: 1px solid var(--scada-border);
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+.fki-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--scada-muted);
+    text-transform: uppercase;
+}
+
+.fki-val {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.sidebar-search {
+    font-size: 12px;
+    background: var(--scada-card) !important;
+    border-color: var(--scada-border) !important;
+    color: #c9d1e9 !important;
+    padding-left: 28px !important;
+}
+.sidebar-search:focus {
+    border-color: var(--scada-accent) !important;
+    box-shadow: 0 0 0 2px rgba(255,193,7,0.15) !important;
+}
+.sidebar-search::placeholder { color: var(--scada-muted) !important; }
+
+/* Sidebar plant list — scrollable */
+.sidebar-list {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+/* Plant item */
 .plant-item {
-    cursor: pointer;
-    transition: all 0.2s;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--scada-border);
     border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
 }
-.plant-item:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-.plant-item.active {
-    background-color: rgba(255, 193, 7, 0.1);
-    border-left-color: var(--scada-accent);
+.plant-item:hover { background: rgba(255,255,255,0.03); border-left-color: #3d4560; }
+.plant-item.active { background: rgba(255,193,7,0.07); border-left-color: var(--scada-accent); }
+.plant-item:last-child { border-bottom: none; }
+
+.plant-item-name {
+    font-weight: 500;
+    font-size: 12px;
+    color: #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
 }
 
-/* Pulse Animation for Status */
-@keyframes pulse-green {
-    0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); }
-    70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
-}
-.pulse {
-    animation: pulse-green 2s infinite;
+.plant-item-id {
+    font-size: 10px;
+    color: var(--scada-muted);
+    font-family: 'Roboto Mono', monospace;
 }
 
-/* Solar Array Visualization */
+.plant-item-power {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.plant-item-sub {
+    font-size: 10px;
+    color: var(--scada-muted);
+    margin-top: 2px;
+}
+
+.plant-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.sidebar-footer {
+    padding: 8px 12px;
+    border-top: 1px solid var(--scada-border);
+    background: rgba(0,0,0,0.2);
+    flex-shrink: 0;
+}
+
+/* ===== MAIN CONTENT ===== */
+.main-content {
+    flex: 1;
+    min-width: 0;
+    background: var(--scada-bg);
+    overflow: hidden;
+}
+
+/* ===== MAP ===== */
+.leaflet-container { background: #000 !important; }
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: var(--scada-card);
+    color: #e2e8f0;
+    border: 1px solid var(--scada-border);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+.leaflet-popup-content-wrapper a { color: var(--scada-accent); }
+
+.map-overlay {
+    z-index: 1000;
+    background: rgba(10,12,18,0.88);
+    border: 1px solid var(--scada-border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    backdrop-filter: blur(6px);
+    min-width: 260px;
+}
+
+.map-kpi-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--scada-muted);
+}
+
+.map-kpi-val {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+/* ===== DETAIL HEADER ===== */
+.detail-header {
+    background: var(--scada-surface);
+    border-bottom: 1px solid var(--scada-border);
+    flex-shrink: 0;
+}
+
+/* ===== TABS ===== */
+.detail-tabs-bar {
+    background: var(--scada-surface);
+    border-bottom: 1px solid var(--scada-border);
+    display: flex;
+    flex-shrink: 0;
+}
+
+.detail-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--scada-muted);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.detail-tab:hover { color: #c9d1e9; }
+.detail-tab.active {
+    color: var(--scada-accent);
+    border-bottom-color: var(--scada-accent);
+}
+
+/* ===== KPI CARDS ===== */
+.kpi-card {
+    background: var(--scada-card);
+    border: 1px solid var(--scada-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    height: 100%;
+}
+
+.kpi-card-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--scada-muted);
+    margin-bottom: 4px;
+}
+
+.kpi-card-val {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1.2;
+    margin-bottom: 6px;
+}
+
+.kpi-card-sub { font-size: 10px; }
+
+/* ===== MINI BAR ===== */
+.mini-bar-track {
+    height: 3px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 3px;
+}
+
+.mini-bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s ease;
+}
+
+/* ===== SCADA CARDS ===== */
+.scada-card {
+    background: var(--scada-card);
+    border: 1px solid var(--scada-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+.scada-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8892ab;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+}
+
+/* ===== TABLES ===== */
+.scada-table {
+    font-size: 12px;
+    color: #c9d1e9;
+}
+.scada-table thead th {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--scada-muted);
+    border-color: var(--scada-border);
+    padding: 6px 8px;
+    background: rgba(0,0,0,0.2);
+    white-space: nowrap;
+}
+.scada-table td {
+    border-color: var(--scada-border);
+    padding: 5px 8px;
+    vertical-align: middle;
+}
+.scada-table tbody tr { transition: background 0.1s; }
+.scada-table tbody tr:hover { background: rgba(255,255,255,0.025); }
+
+/* ===== POWER TRIANGLE ===== */
+.power-tri-box {
+    border: 1px solid;
+    border-radius: 8px;
+    padding: 8px 4px;
+    background: rgba(0,0,0,0.2);
+}
+.power-tri-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; }
+.power-tri-val { font-family: 'Roboto Mono', monospace; font-size: 14px; font-weight: 500; }
+
+/* ===== SOLAR ARRAY ===== */
+.solar-viz-wrap { border-radius: 6px; background: rgba(0,0,0,0.3); }
+
 .solar-array {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 5px;
-    perspective: 300px;
-    transform: rotateX(20deg);
-    margin-top: 40px;
+    gap: 4px;
+    perspective: 250px;
+    transform: rotateX(22deg);
+    margin: 14px 10px 0;
 }
+
 .panel {
-    height: 40px;
-    background: linear-gradient(135deg, #1a237e, #0d47a1);
-    border: 1px solid #444;
-    box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    position: relative;
+    height: 32px;
+    background: linear-gradient(135deg, #0d1b47, #1565c0);
+    border: 1px solid #2a4a8c;
+    border-radius: 2px;
     overflow: hidden;
+    position: relative;
+    transition: background 0.5s;
 }
 .panel::after {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
+    inset: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+}
+.panel.active {
+    background: linear-gradient(135deg, #1a3c7a, #1e88e5);
+    box-shadow: 0 0 6px rgba(30,136,229,0.3);
 }
 
 .sun-overlay {
     position: absolute;
-    top: 10px;
-    right: 10px;
-    width: 40px;
-    height: 40px;
+    top: 8px; right: 8px;
+    width: 28px; height: 28px;
     background: radial-gradient(circle, #ffeb3b 0%, rgba(255,235,59,0) 70%);
     border-radius: 50%;
-    box-shadow: 0 0 20px #ffeb3b;
+    box-shadow: 0 0 16px #ffeb3b;
     transition: opacity 0.5s;
 }
 
-/* Map Customization */
-.leaflet-container {
-    background: #000 !important;
-}
-.leaflet-popup-content-wrapper, .leaflet-popup-tip {
-    background: var(--scada-panel);
-    color: #fff;
+/* ===== MODBUS PANEL ===== */
+.modbus-banner {
+    background: var(--scada-card);
     border: 1px solid var(--scada-border);
+    border-left: 3px solid var(--scada-accent);
+    border-radius: 8px;
+    padding: 12px 16px;
 }
+
+.modbus-status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #6b7280;
+    transition: background 0.4s, box-shadow 0.4s;
+    flex-shrink: 0;
+}
+.modbus-status-dot.active {
+    background: #22c55e;
+    box-shadow: 0 0 8px rgba(34,197,94,0.6);
+    animation: mb-pulse 2s infinite;
+}
+.modbus-status-dot.error {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239,68,68,0.5);
+}
+
+@keyframes mb-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+    50% { box-shadow: 0 0 0 5px rgba(34,197,94,0); }
+}
+
+.mb-meta-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--scada-muted);
+    margin-bottom: 2px;
+}
+
+/* Register table row highlights */
+.mb-row-ok td:first-child { border-left: 2px solid #22c55e; }
+.mb-row-warn td:first-child { border-left: 2px solid #f59e0b; }
+.mb-row-err td:first-child { border-left: 2px solid #ef4444; }
+
+/* ===== CODE SNIPPET ===== */
+.code-snippet {
+    background: #0a0c10;
+    border: 1px solid var(--scada-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+    color: #a8d8a8;
+    overflow-x: auto;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre;
+}
+
+/* ===== REGISTER BADGE ===== */
+.reg-addr-badge {
+    display: inline-block;
+    background: rgba(255,193,7,0.12);
+    color: var(--scada-accent);
+    border: 1px solid rgba(255,193,7,0.25);
+    border-radius: 4px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 6px;
+}
+
+/* ===== MODBUS ADDR BOXES ===== */
+.mb-addr-box {
+    background: var(--scada-bg);
+    border: 1px solid var(--scada-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.mb-addr-box .mb-ab-label { font-size: 10px; color: var(--scada-muted); text-transform: uppercase; }
+.mb-addr-box .mb-ab-val { font-family: 'Roboto Mono', monospace; font-size: 16px; color: var(--scada-accent); font-weight: 600; }
+
+/* ===== MISC ===== */
+.tab-panel { animation: fadeIn 0.15s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+code { color: #a3b8ef; background: rgba(100,120,200,0.12); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+.border-scada { border-color: var(--scada-border) !important; }
+.bg-scada { background: var(--scada-surface) !important; }

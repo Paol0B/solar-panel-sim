@@ -4,215 +4,239 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solar SCADA System</title>
-    
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;500&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="#">
-                <i class="fas fa-solar-panel text-warning me-2"></i>
-                <span class="scada-font text-warning">SOLAR</span><span class="scada-font">SCADA</span>
-            </a>
-            <div class="d-flex align-items-center">
-                <span class="badge bg-success me-3 pulse"><i class="fas fa-circle me-1"></i> SYSTEM ONLINE</span>
-                <span id="clock" class="text-light font-monospace">--:--:--</span>
+<!-- Navbar -->
+<nav class="scada-navbar d-flex justify-content-between align-items-center px-3">
+    <div class="d-flex align-items-center gap-2">
+        <i class="fas fa-solar-panel text-warning"></i>
+        <span class="scada-font text-warning fw-bold">SOLAR</span><span class="scada-font text-light fw-bold">SCADA</span>
+        <span class="ms-2 badge-live"><i class="fas fa-circle me-1"></i>LIVE</span>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+        <span class="nav-meta"><i class="fas fa-network-wired me-1"></i>Modbus <span class="text-info" id="nav-modbus-port">:5020</span></span>
+        <span class="nav-meta"><i class="fas fa-globe me-1"></i>API <span class="text-info">:3000</span></span>
+        <div class="nav-divider"></div>
+        <span id="clock" class="font-monospace text-success small fw-bold">--:--:--</span>
+    </div>
+</nav>
+
+<!-- App Shell -->
+<div class="app-shell">
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="sidebar d-flex flex-column">
+
+        <!-- Sidebar Header (fixed) -->
+        <div class="sidebar-header">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="text-uppercase text-muted small fw-bold">Fleet Overview</span>
+                <span class="badge bg-secondary font-monospace" id="sb-plant-count">0</span>
+            </div>
+            <div class="fleet-kpi d-flex gap-2 mb-2">
+                <div class="fleet-kpi-item flex-fill">
+                    <div class="fki-label">TOTAL POWER</div>
+                    <div class="fki-val text-warning" id="sb-total-power">— kW</div>
+                </div>
+                <div class="fleet-kpi-item flex-fill">
+                    <div class="fki-label">ACTIVE</div>
+                    <div class="fki-val text-success"><span id="sb-active">0</span>/<span id="sb-total">0</span></div>
+                </div>
+            </div>
+            <div class="position-relative">
+                <i class="fas fa-search position-absolute text-muted" style="left:9px;top:8px;font-size:10px;"></i>
+                <input id="plant-search" type="text" class="form-control form-control-sm sidebar-search" placeholder="Filter plants…">
             </div>
         </div>
-    </nav>
 
-    <div class="container-fluid p-0">
-        <div class="row g-0" style="height: calc(100vh - 56px);">
-            
-            <!-- Sidebar / Plant List -->
-            <div class="col-md-3 col-lg-2 bg-dark border-end border-secondary d-flex flex-column">
-                <div class="p-3 border-bottom border-secondary">
-                    <h6 class="text-uppercase text-muted mb-2">Plants Overview</h6>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="h4 mb-0" id="total-power">0.0 kW</span>
-                        <small class="text-success"><i class="fas fa-arrow-up"></i> Total</small>
+        <!-- Plant list (scrollable) -->
+        <div class="sidebar-list flex-grow-1" id="plant-list">
+            <div class="text-center p-4 text-muted">
+                <div class="spinner-border spinner-border-sm text-primary mb-2" role="status"></div>
+                <p class="mb-0 small">Loading…</p>
+            </div>
+        </div>
+
+        <!-- Sidebar Footer -->
+        <div class="sidebar-footer">
+            <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">System</small>
+                <span class="badge bg-success-subtle text-success-emphasis border border-success small" id="sb-sys-status">
+                    <i class="fas fa-check-circle me-1"></i>Connected
+                </span>
+            </div>
+            <small class="text-muted">Updated: <span id="sb-last-update" class="text-info font-monospace">--:--:--</span></small>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN CONTENT ===== -->
+    <main class="main-content d-flex flex-column">
+
+        <!-- MAP VIEW -->
+        <div id="map-view" class="flex-grow-1 position-relative">
+            <div id="map" style="height:100%;width:100%;"></div>
+            <div class="map-overlay position-absolute top-0 end-0 m-3">
+                <div class="text-warning scada-font small mb-2">GLOBAL METRICS</div>
+                <div class="d-flex gap-3">
+                    <div>
+                        <div class="map-kpi-label">ACTIVE</div>
+                        <div class="map-kpi-val"><span id="map-active">0</span>/<span id="map-total">0</span></div>
+                    </div>
+                    <div>
+                        <div class="map-kpi-label">TOTAL OUTPUT</div>
+                        <div class="map-kpi-val text-warning" id="map-total-power">— kW</div>
+                    </div>
+                    <div>
+                        <div class="map-kpi-label">AVG EFFICIENCY</div>
+                        <div class="map-kpi-val text-info" id="map-avg-eff">—%</div>
                     </div>
                 </div>
-                
-                <div class="flex-grow-1 overflow-auto" id="plant-list">
-                    <!-- Plant items will be injected here -->
-                    <div class="text-center p-4 text-muted">
-                        <div class="spinner-border text-primary" role="status"></div>
-                        <p class="mt-2">Loading plants...</p>
+            </div>
+        </div>
+
+        <!-- DETAIL VIEW -->
+        <div id="detail-view" class="d-none flex-grow-1 d-flex flex-column overflow-hidden">
+
+            <!-- Detail Header -->
+            <div class="detail-header d-flex justify-content-between align-items-center px-4 py-2">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="showMap()">
+                        <i class="fas fa-arrow-left me-1"></i>Map
+                    </button>
+                    <div>
+                        <h5 class="scada-font text-white mb-0" id="detail-name">Plant Name</h5>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <code class="text-muted small" id="detail-id">plant_id</code>
+                            <span class="badge bg-dark border border-secondary font-monospace small" id="detail-local-time">--:--:--</span>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="p-3 border-top border-secondary bg-black">
-                    <small class="text-muted">System Status: <span class="text-success">Connected</span></small>
+                <div class="d-flex align-items-center gap-3">
+                    <div id="weather-icon-container"><i class="fas fa-sun fa-2x text-warning"></i></div>
+                    <div class="text-end">
+                        <span class="badge fs-6 px-3" id="detail-status">--</span>
+                        <div class="mt-1"><small class="text-muted">Nominal: <span id="detail-nominal" class="text-white font-monospace">—</span> kW</small></div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Main Content -->
-            <div class="col-md-9 col-lg-10 d-flex flex-column bg-black position-relative">
-                
-                <!-- Map View (Default) -->
-                <div id="map-view" class="flex-grow-1 position-relative">
-                    <div id="map" style="height: 100%; width: 100%;"></div>
-                    
-                    <!-- Overlay Stats -->
-                    <div class="position-absolute top-0 end-0 m-3 p-3 bg-dark bg-opacity-75 rounded border border-secondary" style="z-index: 1000; min-width: 250px;">
-                        <h6 class="text-uppercase text-warning mb-3">Global Metrics</h6>
-                        <div class="mb-2">
-                            <small class="text-muted d-block">Active Plants</small>
-                            <span class="h5" id="active-plants-count">0</span> / <span id="total-plants-count">0</span>
-                        </div>
-                        <div>
-                            <small class="text-muted d-block">Avg Efficiency</small>
-                            <span class="h5 text-info">98.2%</span>
-                        </div>
-                    </div>
-                </div>
+            <!-- Tabs -->
+            <div class="px-4 detail-tabs-bar">
+                <button class="detail-tab active" data-tab="tab-kpi"><i class="fas fa-tachometer-alt me-1"></i>Live Data</button>
+                <button class="detail-tab" data-tab="tab-chart"><i class="fas fa-chart-line me-1"></i>Chart</button>
+                <button class="detail-tab" data-tab="tab-modbus"><i class="fas fa-network-wired me-1"></i>Modbus</button>
+                <button class="detail-tab" data-tab="tab-info"><i class="fas fa-info-circle me-1"></i>Plant Info</button>
+            </div>
 
-                <!-- Detail View (Hidden by default) -->
-                <div id="detail-view" class="d-none flex-grow-1 overflow-auto p-4">
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <div>
-                            <button class="btn btn-outline-secondary btn-sm mb-2" onclick="showMap()"><i class="fas fa-arrow-left"></i> Back to Map</button>
-                            <h2 class="scada-font text-white mb-0" id="detail-name">Plant Name</h2>
-                            <div class="d-flex align-items-center mt-1">
-                                <small class="text-muted me-3" id="detail-id">ID: plant_1</small>
-                                <span class="badge bg-dark border border-secondary text-light" id="detail-local-time">--:--</span>
-                            </div>
-                        </div>
-                        <div class="text-end">
-                            <div class="mb-2" id="weather-icon-container">
-                                <!-- Icon injected by JS -->
-                            </div>
-                            <span class="badge bg-success fs-6" id="detail-status">RUNNING</span>
-                        </div>
-                    </div>
+            <!-- Tab Content -->
+            <div class="flex-grow-1 overflow-auto p-4" id="tab-content-area">
 
-                    <!-- KPI Cards -->
-                    <div class="row g-4 mb-4">
-                        <div class="col-md-3">
-                            <div class="card bg-dark border-secondary h-100">
-                                <div class="card-body">
-                                    <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-bolt text-warning me-2"></i>Power Output</h6>
-                                    <h3 class="card-title text-warning mb-0" id="detail-power">0.00 kW</h3>
+                <!-- TAB: LIVE DATA -->
+                <div id="tab-kpi" class="tab-panel">
+                    <div class="row g-3 mb-3">
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-bolt text-warning me-1"></i>Active Power</div>
+                                <div class="kpi-card-val text-warning" id="detail-power">— kW</div>
+                                <div class="kpi-card-sub">
+                                    <div class="mini-bar-track"><div class="mini-bar bg-warning" id="detail-power-bar" style="width:0%"></div></div>
+                                    <span class="text-muted small" id="detail-power-pct">0% of nominal</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="card bg-dark border-secondary h-100">
-                                <div class="card-body">
-                                    <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-plug text-info me-2"></i>Voltage</h6>
-                                    <h3 class="card-title text-white mb-0" id="detail-voltage">0.0 V</h3>
-                                </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-plug text-info me-1"></i>Voltage</div>
+                                <div class="kpi-card-val text-info" id="detail-voltage">— V</div>
+                                <div class="kpi-card-sub text-muted small">AC Grid</div>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="card bg-dark border-secondary h-100">
-                                <div class="card-body">
-                                    <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-wave-square text-primary me-2"></i>Frequency</h6>
-                                    <h3 class="card-title text-white mb-0" id="detail-frequency">0.00 Hz</h3>
-                                </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-water text-primary me-1"></i>Current</div>
+                                <div class="kpi-card-val text-white" id="detail-current">— A</div>
+                                <div class="kpi-card-sub text-muted small">Phase RMS</div>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="card bg-dark border-secondary h-100">
-                                <div class="card-body">
-                                    <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-thermometer-half text-danger me-2"></i>Temperature</h6>
-                                    <h3 class="card-title text-white mb-0" id="detail-temp">0.0 °C</h3>
-                                </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-wave-square text-success me-1"></i>Frequency</div>
+                                <div class="kpi-card-val text-white" id="detail-frequency">— Hz</div>
+                                <div class="kpi-card-sub small" id="detail-freq-status">—</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="row g-4 mb-4">
+                    <div class="row g-3 mb-3">
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-thermometer-half text-danger me-1"></i>Temperature</div>
+                                <div class="kpi-card-val" id="detail-temp-col">— °C</div>
+                                <div class="kpi-card-sub text-muted small">Panel cell</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-leaf text-success me-1"></i>Efficiency</div>
+                                <div class="kpi-card-val text-success" id="detail-efficiency">— %</div>
+                                <div class="kpi-card-sub"><div class="mini-bar-track"><div class="mini-bar bg-success" id="detail-eff-bar" style="width:0%"></div></div></div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-angle-double-right text-info me-1"></i>Power Factor</div>
+                                <div class="kpi-card-val" id="detail-pf">—</div>
+                                <div class="kpi-card-sub"><div class="mini-bar-track"><div class="mini-bar bg-info" id="detail-pf-bar" style="width:0%"></div></div></div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-xl-3">
+                            <div class="kpi-card">
+                                <div class="kpi-card-label"><i class="fas fa-database text-info me-1"></i>Daily Energy</div>
+                                <div class="kpi-card-val text-info" id="detail-energy">— kWh</div>
+                                <div class="kpi-card-sub text-muted small">Accumulated today</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
                         <div class="col-md-6">
-                             <div class="card bg-dark border-secondary h-100">
-                                <div class="card-body d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="card-subtitle mb-2 text-muted"><i class="fas fa-leaf text-success me-2"></i>Efficiency</h6>
-                                        <h3 class="card-title text-white mb-0" id="detail-efficiency">0.0 %</h3>
+                            <div class="scada-card">
+                                <div class="scada-card-title"><i class="fas fa-vector-square me-2 text-warning"></i>Power Triangle</div>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-4 text-center">
+                                        <div class="power-tri-box border-warning">
+                                            <div class="power-tri-label text-muted">P — Active</div>
+                                            <div class="power-tri-val text-warning" id="pt-active">— kW</div>
+                                        </div>
                                     </div>
-                                    <div class="text-end">
-                                        <small class="text-muted">Daily Energy</small>
-                                        <h4 class="text-info mb-0" id="detail-energy">0.00 kWh</h4>
+                                    <div class="col-4 text-center">
+                                        <div class="power-tri-box border-info">
+                                            <div class="power-tri-label text-muted">S — Apparent</div>
+                                            <div class="power-tri-val text-info" id="pt-apparent">— kVA</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4 text-center">
+                                        <div class="power-tri-box border-primary">
+                                            <div class="power-tri-label text-muted">Q — Reactive</div>
+                                            <div class="power-tri-val text-primary" id="pt-reactive">— kvar</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row g-4">
-                        <!-- Charts -->
-                        <div class="col-lg-8">
-                            <div class="card bg-dark border-secondary mb-4">
-                                <div class="card-header border-secondary bg-transparent">
-                                    <h6 class="mb-0">Power Generation History (Real-time)</h6>
-                                </div>
-                                <div class="card-body">
-                                    <canvas id="powerChart" height="300"></canvas>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Info Panel -->
-                        <div class="col-lg-4">
-                            <div class="card bg-dark border-secondary mb-4">
-                                <div class="card-header border-secondary bg-transparent">
-                                    <h6 class="mb-0">Technical Details</h6>
-                                </div>
-                                <div class="card-body">
-                                    <ul class="list-group list-group-flush bg-transparent">
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Current</span>
-                                            <span class="font-monospace" id="detail-current">0.00 A</span>
-                                        </li>
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Power Factor</span>
-                                            <span class="font-monospace" id="detail-pf">0.00</span>
-                                        </li>
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Apparent Power</span>
-                                            <span class="font-monospace" id="detail-apparent">0.00 kVA</span>
-                                        </li>
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Reactive Power</span>
-                                            <span class="font-monospace" id="detail-reactive">0.00 kvar</span>
-                                        </li>
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Nominal Power</span>
-                                            <span class="font-monospace" id="detail-nominal">0.00 kW</span>
-                                        </li>
-                                        <li class="list-group-item bg-transparent text-light d-flex justify-content-between border-secondary">
-                                            <span>Location</span>
-                                            <span class="font-monospace" id="detail-location">0.0, 0.0</span>
-                                        </li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <!-- Solar Panel Visual -->
-                            <div class="card bg-dark border-secondary">
-                                <div class="card-header border-secondary bg-transparent">
-                                    <h6 class="mb-0">Array Visualization</h6>
-                                </div>
-                                <div class="card-body text-center position-relative overflow-hidden" style="height: 200px;">
+                        <div class="col-md-6">
+                            <div class="scada-card">
+                                <div class="scada-card-title"><i class="fas fa-solar-panel me-2 text-warning"></i>Array Visualization</div>
+                                <div class="solar-viz-wrap position-relative overflow-hidden" style="height:110px;">
                                     <div class="solar-array">
-                                        <div class="panel"></div>
-                                        <div class="panel"></div>
-                                        <div class="panel"></div>
-                                        <div class="panel"></div>
-                                        <div class="panel"></div>
-                                        <div class="panel"></div>
+                                        <div class="panel"></div><div class="panel"></div><div class="panel"></div>
+                                        <div class="panel"></div><div class="panel"></div><div class="panel"></div>
                                     </div>
                                     <div class="sun-overlay" id="sun-visual"></div>
                                 </div>
@@ -221,14 +245,171 @@
                     </div>
                 </div>
 
-            </div>
-        </div>
-    </div>
+                <!-- TAB: CHART -->
+                <div id="tab-chart" class="tab-panel d-none">
+                    <div class="scada-card mb-3">
+                        <div class="scada-card-title d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-chart-line me-2 text-warning"></i>Power Generation History</span>
+                            <small class="text-muted font-monospace">2s refresh · last 30 points</small>
+                        </div>
+                        <canvas id="powerChart" height="220"></canvas>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="scada-card text-center">
+                                <div class="kpi-card-label mb-1">PEAK THIS SESSION</div>
+                                <div class="kpi-card-val text-warning" id="chart-peak">— kW</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="scada-card text-center">
+                                <div class="kpi-card-label mb-1">AVERAGE</div>
+                                <div class="kpi-card-val text-info" id="chart-avg">— kW</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="scada-card text-center">
+                                <div class="kpi-card-label mb-1">SAMPLES</div>
+                                <div class="kpi-card-val text-muted" id="chart-samples">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/app.js"></script>
+                <!-- TAB: MODBUS -->
+                <div id="tab-modbus" class="tab-panel d-none">
+
+                    <div class="modbus-banner d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="modbus-status-dot" id="mb-dot"></div>
+                            <div>
+                                <div class="fw-bold text-light">Modbus TCP Server</div>
+                                <div class="small text-muted font-monospace" id="mb-addr">0.0.0.0:5020</div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-4">
+                            <div class="text-center">
+                                <div class="mb-meta-label">PROTOCOL</div>
+                                <div class="text-info small font-monospace">TCP/IP</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="mb-meta-label">ENCODING</div>
+                                <div class="text-info small font-monospace">UInt16 BE</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="mb-meta-label">UNIT ID</div>
+                                <div class="text-info small font-monospace">1</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="mb-meta-label">FUNC CODES</div>
+                                <div class="text-info small font-monospace">03 / 04</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="mb-meta-label">REFRESH</div>
+                                <div class="text-info small font-monospace">2s</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="scada-card mb-3">
+                        <div class="scada-card-title d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-table me-2 text-warning"></i>Register Map — <span id="mb-plant-id" class="font-monospace text-info">—</span></span>
+                            <span class="badge bg-dark border border-secondary small font-monospace" id="mb-reg-count">—</span>
+                        </div>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm scada-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="width:60px">Addr</th>
+                                        <th>Variable</th>
+                                        <th>Scaling</th>
+                                        <th class="text-end">Raw u16</th>
+                                        <th class="text-end">Decoded Value</th>
+                                        <th style="width:70px">Unit</th>
+                                        <th style="width:90px">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mb-register-tbody">
+                                    <tr><td colspan="7" class="text-center text-muted py-3 small">Select a plant to view registers</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="scada-card">
+                                <div class="scada-card-title"><i class="fas fa-ruler me-2 text-info"></i>Scaling Reference</div>
+                                <table class="table table-sm scada-table mb-0 mt-2">
+                                    <thead><tr><th>Variable</th><th>Factor</th><th>Max u16</th></tr></thead>
+                                    <tbody>
+                                        <tr><td>Power</td><td class="font-monospace text-warning">÷1</td><td class="text-muted font-monospace">65,535 kW</td></tr>
+                                        <tr><td>Voltage</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 V</td></tr>
+                                        <tr><td>Current</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 A</td></tr>
+                                        <tr><td>Frequency</td><td class="font-monospace text-info">÷100</td><td class="text-muted font-monospace">655.35 Hz</td></tr>
+                                        <tr><td>Temperature</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 °C</td></tr>
+                                        <tr><td>Status</td><td class="font-monospace text-secondary">none</td><td class="text-muted font-monospace">0 / 1</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="scada-card">
+                                <div class="scada-card-title"><i class="fab fa-python me-2 text-warning"></i>Python Snippet (pymodbus)</div>
+                                <pre class="code-snippet mb-0 mt-2" id="mb-code-snippet"><!-- rendered by JS --></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: PLANT INFO -->
+                <div id="tab-info" class="tab-panel d-none">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="scada-card h-100">
+                                <div class="scada-card-title"><i class="fas fa-id-card me-2 text-warning"></i>Identity</div>
+                                <table class="table table-sm scada-table mb-0 mt-2">
+                                    <tbody>
+                                        <tr><td class="text-muted">Plant ID</td><td class="font-monospace text-info" id="info-id">—</td></tr>
+                                        <tr><td class="text-muted">Name</td><td id="info-name">—</td></tr>
+                                        <tr><td class="text-muted">Timezone</td><td class="font-monospace" id="info-tz">—</td></tr>
+                                        <tr><td class="text-muted">Nominal Power</td><td class="font-monospace" id="info-nominal">—</td></tr>
+                                        <tr><td class="text-muted">Update Interval</td><td class="font-monospace">5 seconds</td></tr>
+                                        <tr><td class="text-muted">Weather Source</td><td class="font-monospace text-info">Open-Meteo API</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="scada-card h-100">
+                                <div class="scada-card-title"><i class="fas fa-map-marker-alt me-2 text-warning"></i>Location</div>
+                                <table class="table table-sm scada-table mb-0 mt-2">
+                                    <tbody>
+                                        <tr><td class="text-muted">Latitude</td><td class="font-monospace" id="info-lat">—</td></tr>
+                                        <tr><td class="text-muted">Longitude</td><td class="font-monospace" id="info-lon">—</td></tr>
+                                    </tbody>
+                                </table>
+                                <div id="info-mini-map" style="height:120px; border-radius:8px; overflow:hidden; margin-top:10px;"></div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="scada-card">
+                                <div class="scada-card-title"><i class="fas fa-network-wired me-2 text-warning"></i>Modbus Register Addresses</div>
+                                <div class="row g-2 mt-1" id="info-modbus-mapping"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /tab-content-area -->
+        </div><!-- /detail-view -->
+
+    </main>
+</div><!-- /app-shell -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

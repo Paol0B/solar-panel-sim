@@ -42,18 +42,43 @@ impl Service for MbService {
                         let reg_addr = addr + i;
                         let val = if let Some((plant_id, var_type)) = register_map.get(&reg_addr) {
                             if let Some(data) = state.get_data(plant_id) {
-                                match var_type {
-                                    VariableType::Power => (data.power_kw * 100.0) as u16,
-                                    VariableType::Voltage => (data.voltage_v * 10.0) as u16,
-                                    VariableType::Current => (data.current_a * 100.0) as u16,
-                                    VariableType::Frequency => (data.frequency_hz * 100.0) as u16,
-                                    VariableType::Temperature => (data.temperature_c * 10.0) as u16,
-                                    VariableType::Status => data.status,
+                                let scaled_val = match var_type {
+                                    // Power: scale x1 (integer kW) - supports up to 65.535 MW
+                                    VariableType::Power => (data.power_kw.max(0.0).round() as u32).min(65535),
+                                    // Voltage: scale x10 (deci-V) - supports up to 6553.5 V
+                                    VariableType::Voltage => ((data.voltage_v * 10.0).max(0.0).round() as u32).min(65535),
+                                    // Current: scale x10 (deci-A) - supports up to 6553.5 A
+                                    VariableType::Current => ((data.current_a * 10.0).max(0.0).round() as u32).min(65535),
+                                    // Frequency: scale x100 (centi-Hz) - supports up to 655.35 Hz
+                                    VariableType::Frequency => ((data.frequency_hz * 100.0).max(0.0).round() as u32).min(65535),
+                                    // Temperature: scale x10 (deci-C) - supports up to 6553.5 C
+                                    VariableType::Temperature => ((data.temperature_c * 10.0).max(0.0).round() as u32).min(65535),
+                                    VariableType::Status => data.status as u32,
+                                };
+                                if i == 0 {
+                                    println!("[MODBUS READ] Plant: {} | Var: {:?} | Raw: {:.2} | Scaled: {} | Addr: {}",
+                                             plant_id, var_type, 
+                                             match var_type {
+                                                 VariableType::Power => data.power_kw,
+                                                 VariableType::Voltage => data.voltage_v,
+                                                 VariableType::Current => data.current_a,
+                                                 VariableType::Frequency => data.frequency_hz,
+                                                 VariableType::Temperature => data.temperature_c,
+                                                 VariableType::Status => data.status as f64,
+                                             },
+                                             scaled_val, reg_addr);
                                 }
+                                scaled_val as u16
                             } else {
+                                if i == 0 {
+                                    println!("[MODBUS READ] Addr: {} | No data for plant", reg_addr);
+                                }
                                 0
                             }
                         } else {
+                            if i == 0 {
+                                println!("[MODBUS READ] Addr: {} | Not mapped", reg_addr);
+                            }
                             0
                         };
                         registers.push(val);
@@ -66,14 +91,20 @@ impl Service for MbService {
                         let reg_addr = addr + i;
                         let val = if let Some((plant_id, var_type)) = register_map.get(&reg_addr) {
                             if let Some(data) = state.get_data(plant_id) {
-                                match var_type {
-                                    VariableType::Power => (data.power_kw * 100.0) as u16,
-                                    VariableType::Voltage => (data.voltage_v * 10.0) as u16,
-                                    VariableType::Current => (data.current_a * 100.0) as u16,
-                                    VariableType::Frequency => (data.frequency_hz * 100.0) as u16,
-                                    VariableType::Temperature => (data.temperature_c * 10.0) as u16,
-                                    VariableType::Status => data.status,
-                                }
+                                let scaled_val = match var_type {
+                                    // Power: scale x1 (integer kW) - supports up to 65.535 MW
+                                    VariableType::Power => (data.power_kw.max(0.0).round() as u32).min(65535),
+                                    // Voltage: scale x10 (deci-V) - supports up to 6553.5 V
+                                    VariableType::Voltage => ((data.voltage_v * 10.0).max(0.0).round() as u32).min(65535),
+                                    // Current: scale x10 (deci-A) - supports up to 6553.5 A
+                                    VariableType::Current => ((data.current_a * 10.0).max(0.0).round() as u32).min(65535),
+                                    // Frequency: scale x100 (centi-Hz) - supports up to 655.35 Hz
+                                    VariableType::Frequency => ((data.frequency_hz * 100.0).max(0.0).round() as u32).min(65535),
+                                    // Temperature: scale x10 (deci-C) - supports up to 6553.5 C
+                                    VariableType::Temperature => ((data.temperature_c * 10.0).max(0.0).round() as u32).min(65535),
+                                    VariableType::Status => data.status as u32,
+                                };
+                                scaled_val as u16
                             } else {
                                 0
                             }
