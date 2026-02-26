@@ -144,7 +144,7 @@ pub fn estimate(
     let tilt = tilt_deg * DEG;
     // Surface azimuth: 180° (south) NH; 0° (north) SH
     let surf_az_deg = if lat_deg >= 0.0 { 180.0 } else { 0.0 };
-    let surf_az = surf_az_deg * DEG;
+    let _surf_az = surf_az_deg * DEG;
 
     // Angle of incidence (θ) between sun and panel normal
     let az_diff = (azimuth_deg - surf_az_deg) * DEG;

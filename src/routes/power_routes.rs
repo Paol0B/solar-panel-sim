@@ -1,4 +1,4 @@
-use axum::{routing::{get, post}, Router};
+use axum::{routing::get, Router};
 use crate::controllers::power_controller::{
     list_plants, get_plant_power, get_global_power, get_modbus_info,
     get_offline_mode, set_offline_mode,
