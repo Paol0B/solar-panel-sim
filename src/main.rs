@@ -79,6 +79,9 @@ async fn main() {
                             data.poa_irradiance_w_m2,
                             data.cloud_factor,
                             data.solar_elevation_deg,
+                            data.wind_speed_m_s,
+                            data.relative_humidity_pct,
+                            data.soiling_factor,
                         );
                         println!(
                             "[{} UPDATE] Plant: {} | DC Power: {:.2} kW | Temp: {:.1}°C",

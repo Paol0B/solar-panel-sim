@@ -96,6 +96,53 @@ pub struct PlantData {
     pub specific_yield_kwh_kwp: f64,
     /// Capacity factor (%)
     pub capacity_factor_percent: f64,
+
+    // ── Environmental conditions ──────────────────────────────────────────────
+    /// Wind speed at 10 m (m/s) — affects panel cooling
+    pub wind_speed_m_s: f64,
+    /// Relative humidity at surface (%)
+    pub relative_humidity_pct: f64,
+    /// Panel soiling factor [0.85..1.0] — 1.0 = clean
+    pub soiling_factor: f64,
+
+    // ── Multi-string MPPT (dual-tracker typical residential/commercial inverter) ─
+    /// MPPT string 1 voltage (V)
+    pub string1_voltage_v: f64,
+    /// MPPT string 1 current (A)
+    pub string1_current_a: f64,
+    /// MPPT string 2 voltage (V)
+    pub string2_voltage_v: f64,
+    /// MPPT string 2 current (A)
+    pub string2_current_a: f64,
+
+    // ── Power quality ─────────────────────────────────────────────────────────
+    /// Total Harmonic Distortion of AC output (%) — IEC 61727 limit <5 %
+    pub ac_thd_percent: f64,
+    /// Residual/leakage current to ground (mA) — IEC 62109 limit <300 mA
+    pub leakage_current_ma: f64,
+    /// DC injection into AC grid (mA) — IEEE 1547 / IEC 61727 limit <0.5% I_rated
+    pub dc_injection_ma: f64,
+
+    // ── Lifetime / KPI tracking ────────────────────────────────────────────────
+    /// Today's peak AC power output (kW)
+    pub daily_peak_power_kw: f64,
+    /// Cumulative CO₂ emissions avoided (kg) — 0.233 kg CO₂/kWh ENTSO-E avg
+    pub co2_avoided_kg: f64,
+
+    // ── Cooling system ────────────────────────────────────────────────────────
+    /// Inverter cooling fan speed (0 = off, 1500–3600 RPM in operation)
+    pub inverter_fan_speed_rpm: u16,
+
+    // ── Internal simulation state (not serialised to API clients) ─────────────
+    /// Ramp factor for sunrise startup / sunset shutdown [0.0..1.0]
+    #[serde(skip)]
+    pub ramp_factor: f64,
+    /// Day-of-year of the last midnight daily-energy reset
+    #[serde(skip)]
+    pub last_day_reset: u32,
+    /// Whether a fan-fault event is currently injected
+    #[serde(skip)]
+    pub fan_fault_active: bool,
 }
 
 impl Default for PlantData {
@@ -137,6 +184,22 @@ impl Default for PlantData {
             performance_ratio: 0.0,
             specific_yield_kwh_kwp: 0.0,
             capacity_factor_percent: 0.0,
+            wind_speed_m_s: 3.0,
+            relative_humidity_pct: 60.0,
+            soiling_factor: 1.0,
+            string1_voltage_v: 600.0,
+            string1_current_a: 0.0,
+            string2_voltage_v: 600.0,
+            string2_current_a: 0.0,
+            ac_thd_percent: 0.0,
+            leakage_current_ma: 0.1,
+            dc_injection_ma: 0.0,
+            daily_peak_power_kw: 0.0,
+            co2_avoided_kg: 0.0,
+            inverter_fan_speed_rpm: 0,
+            ramp_factor: 0.0,
+            last_day_reset: 0,
+            fan_fault_active: false,
         }
     }
 }
@@ -220,6 +283,11 @@ pub mod alarm_flag_bits {
     pub const MPPT_DEVIATION: u32      = 1 << 5;
     pub const GRID_DISCONNECT: u32     = 1 << 6;
     pub const COMMUNICATION_LOSS: u32  = 1 << 7;
+    pub const ROCOF_TRIP: u32          = 1 << 8;
+    pub const FAN_FAULT: u32           = 1 << 9;
+    pub const GROUND_FAULT: u32        = 1 << 10;
+    pub const DC_OVERVOLTAGE: u32      = 1 << 11;
+    pub const LEAKAGE_CURRENT: u32     = 1 << 12;
 }
 
 // ─── Open-Meteo wire types ────────────────────────────────────────────────────
@@ -251,6 +319,12 @@ pub struct SimulationData {
     pub poa_irradiance_w_m2: f64,
     pub cloud_factor: f64,
     pub solar_elevation_deg: f64,
+    /// Wind speed at 10 m (m/s)
+    pub wind_speed_m_s: f64,
+    /// Relative humidity (%)
+    pub relative_humidity_pct: f64,
+    /// Panel soiling factor [0.85..1.0]
+    pub soiling_factor: f64,
 }
 
 // ─── REST API response types ──────────────────────────────────────────────────

@@ -47,6 +47,10 @@ pub async fn get_current_data(
                     // Cloud factor approximated from the radiation value
                     let cloud_guessed = if g > 10.0 { (g / 1000.0).min(1.0) } else { 0.0 };
 
+                    // Wind/humidity/soiling: derive from offline model at current time
+                    // (Open-Meteo basic endpoint does not supply these)
+                    let aux = solar_algorithm::estimate(lat, lon, 0.0, Utc::now());
+
                     return Ok(SimulationData {
                         timestamp,
                         power_kw,
@@ -57,6 +61,9 @@ pub async fn get_current_data(
                         poa_irradiance_w_m2: g,
                         cloud_factor: cloud_guessed,
                         solar_elevation_deg: 0.0, // not available from Open-Meteo
+                        wind_speed_m_s:       aux.wind_speed_m_s,
+                        relative_humidity_pct: aux.relative_humidity_pct,
+                        soiling_factor:        aux.soiling_factor,
                     });
                 }
                 Err(e) => eprintln!("Failed to parse weather data: {}", e),
@@ -74,15 +81,18 @@ pub fn get_offline_data(lat: f64, lon: f64, nominal_power_kw: f64) -> Simulation
     let now = Utc::now();
     let est = solar_algorithm::estimate(lat, lon, nominal_power_kw, now);
     SimulationData {
-        timestamp: now,
-        power_kw:             est.power_kw,
-        temperature_c:        est.cell_temp_c,
-        ambient_temp_c:       est.ambient_temp_c,
-        weather_code:         est.weather_code,
-        is_day:               est.is_day,
-        poa_irradiance_w_m2:  est.ghi_w_m2,
-        cloud_factor:         est.cloud_factor,
-        solar_elevation_deg:  est.solar_elevation_deg,
+        timestamp:             now,
+        power_kw:              est.power_kw,
+        temperature_c:         est.cell_temp_c,
+        ambient_temp_c:        est.ambient_temp_c,
+        weather_code:          est.weather_code,
+        is_day:                est.is_day,
+        poa_irradiance_w_m2:   est.ghi_w_m2,
+        cloud_factor:          est.cloud_factor,
+        solar_elevation_deg:   est.solar_elevation_deg,
+        wind_speed_m_s:        est.wind_speed_m_s,
+        relative_humidity_pct: est.relative_humidity_pct,
+        soiling_factor:        est.soiling_factor,
     }
 }
 
