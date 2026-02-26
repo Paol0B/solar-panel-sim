@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  solar-panel-sim:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: solar-panel-sim-dev
+    restart: unless-stopped
+    ports:
+      # REST API and Web UI
+      - "3000:3000"
+      # Modbus TCP Server
+      - "5020:5020"
+    volumes:
+      # Mount custom configuration if needed
+      - ./config.json:/app/config.json:ro
+    networks:
+      - solar-panel-network
+
+networks:
+  solar-panel-network:
+    driver: bridge
