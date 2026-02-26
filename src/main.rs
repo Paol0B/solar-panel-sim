@@ -73,22 +73,40 @@ async fn main() {
     let modbus_addr = SocketAddr::from(([0, 0, 0, 0], modbus_port));
     let state_modbus = state.clone();
     
-    // Create register map from config
+    // Create register map from config.
+    // Numeric variables (Power, Voltage, Current, Frequency, Temperature) are encoded as
+    // IEEE 754 float32 stored in TWO consecutive u16 registers (big-endian: high word at
+    // the configured address, low word at configured address + 1).
+    // Status occupies a single u16 register (word_index = 0).
     let mut register_map = HashMap::new();
     for plant in &config.plants {
-        println!("[MODBUS MAP] Plant: {} -> Power@{}, Voltage@{}, Current@{}, Freq@{}, Temp@{}, Status@{}",
-                 plant.id, plant.modbus_mapping.power_address, 
-                 plant.modbus_mapping.voltage_address,
-                 plant.modbus_mapping.current_address,
-                 plant.modbus_mapping.frequency_address,
-                 plant.modbus_mapping.temperature_address,
-                 plant.modbus_mapping.status_address);
-        register_map.insert(plant.modbus_mapping.power_address, (plant.id.clone(), modbus_server::VariableType::Power));
-        register_map.insert(plant.modbus_mapping.voltage_address, (plant.id.clone(), modbus_server::VariableType::Voltage));
-        register_map.insert(plant.modbus_mapping.current_address, (plant.id.clone(), modbus_server::VariableType::Current));
-        register_map.insert(plant.modbus_mapping.frequency_address, (plant.id.clone(), modbus_server::VariableType::Frequency));
-        register_map.insert(plant.modbus_mapping.temperature_address, (plant.id.clone(), modbus_server::VariableType::Temperature));
-        register_map.insert(plant.modbus_mapping.status_address, (plant.id.clone(), modbus_server::VariableType::Status));
+        let m = &plant.modbus_mapping;
+        println!(
+            "[MODBUS MAP] Plant: {} → Power@{}+{}, Voltage@{}+{}, Current@{}+{}, Freq@{}+{}, Temp@{}+{}, Status@{}",
+            plant.id,
+            m.power_address,       m.power_address + 1,
+            m.voltage_address,     m.voltage_address + 1,
+            m.current_address,     m.current_address + 1,
+            m.frequency_address,   m.frequency_address + 1,
+            m.temperature_address, m.temperature_address + 1,
+            m.status_address
+        );
+
+        // Helper macro: insert high (word 0) + low (word 1) for a float32 variable.
+        macro_rules! ins_float {
+            ($addr:expr, $vt:ident) => {
+                register_map.insert($addr,     (plant.id.clone(), modbus_server::VariableType::$vt, 0u8));
+                register_map.insert($addr + 1, (plant.id.clone(), modbus_server::VariableType::$vt, 1u8));
+            };
+        }
+
+        ins_float!(m.power_address,       Power);
+        ins_float!(m.voltage_address,     Voltage);
+        ins_float!(m.current_address,     Current);
+        ins_float!(m.frequency_address,   Frequency);
+        ins_float!(m.temperature_address, Temperature);
+        // Status: single u16, word_index = 0
+        register_map.insert(m.status_address, (plant.id.clone(), modbus_server::VariableType::Status, 0u8));
     }
     
     tokio::spawn(async move {

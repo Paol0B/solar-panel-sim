@@ -361,13 +361,26 @@ async function fetchModbusInfo() {
     } catch (e) { console.error('fetchModbusInfo:', e); }
 }
 
+// Encode a JavaScript number as IEEE 754 float32, return the two big-endian u16 words.
+function floatToWords(value) {
+    const buf = new ArrayBuffer(4);
+    new DataView(buf).setFloat32(0, value, false); // big-endian
+    const view = new DataView(buf);
+    return {
+        high: view.getUint16(0, false),
+        low:  view.getUint16(2, false),
+    };
+}
+
+// No scaling factors — values are stored as raw IEEE 754 float32 in 2 consecutive registers.
+// Status is the only variable that occupies a single u16 register (raw integer).
 const VAR_MAP = {
-    'Power':       { key: 'power_kw',       factor: 1,   unit: 'kW',  scaling: '÷1'   },
-    'Voltage':     { key: 'voltage_v',       factor: 10,  unit: 'V',   scaling: '÷10'  },
-    'Current':     { key: 'current_a',       factor: 10,  unit: 'A',   scaling: '÷10'  },
-    'Frequency':   { key: 'frequency_hz',    factor: 100, unit: 'Hz',  scaling: '÷100' },
-    'Temperature': { key: 'temperature_c',   factor: 10,  unit: '°C',  scaling: '÷10'  },
-    'Status':      { key: 'status',          factor: 1,   unit: '—',   scaling: 'raw'  },
+    'Power':       { key: 'power_kw',       unit: 'kW',  regs: 2 },
+    'Voltage':     { key: 'voltage_v',       unit: 'V',   regs: 2 },
+    'Current':     { key: 'current_a',       unit: 'A',   regs: 2 },
+    'Frequency':   { key: 'frequency_hz',    unit: 'Hz',  regs: 2 },
+    'Temperature': { key: 'temperature_c',   unit: '°C',  regs: 2 },
+    'Status':      { key: 'status',          unit: '—',   regs: 1 },
 };
 
 function detectVar(desc) {
@@ -403,13 +416,14 @@ function renderModbusRegisters(plant, liveData) {
         if (liveData) {
             const rv = liveData[varInfo.key];
             if (rv !== undefined && rv !== null) {
-                const rawNum = Math.min(65535, Math.max(0, Math.round(rv * varInfo.factor)));
-                raw  = rawNum;
                 if (varName === 'Status') {
+                    raw      = rv;
                     decoded  = rv === 1 ? '1 (Running)' : '0 (Stopped)';
                     rowClass = rv === 1 ? 'mb-row-ok' : 'mb-row-warn';
                 } else {
-                    decoded  = (rawNum / varInfo.factor).toFixed(varInfo.factor >= 100 ? 2 : 1);
+                    const { high, low } = floatToWords(rv);
+                    raw     = `0x${high.toString(16).padStart(4,'0').toUpperCase()} / 0x${low.toString(16).padStart(4,'0').toUpperCase()}`;
+                    decoded = rv.toFixed(4);
                     rowClass = 'mb-row-ok';
                 }
             }
@@ -421,13 +435,16 @@ function renderModbusRegisters(plant, liveData) {
             ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning small">STOPPED</span>'
             : '<span class="badge bg-secondary small text-muted">—</span>';
 
+        // Encoding column: IEEE 754 float32 (2 regs) or u16 raw (1 reg)
+        const encLabel = varName === 'Status' ? 'u16 raw (1 reg)' : 'IEEE 754 f32 (2 regs)';
+
         const tr = document.createElement('tr');
         tr.className = rowClass;
         tr.innerHTML = `
             <td><span class="reg-addr-badge">${reg.register_address}</span></td>
             <td class="text-white">${varName}</td>
-            <td class="text-muted font-monospace small">${varInfo.scaling} <small class="text-secondary">${reg.data_type}</small></td>
-            <td class="text-end font-monospace text-secondary">${raw}</td>
+            <td class="text-muted font-monospace small">${encLabel}</td>
+            <td class="text-end font-monospace text-secondary small">${raw}</td>
             <td class="text-end font-monospace text-info">${decoded}</td>
             <td class="text-center text-muted small">${varInfo.unit}</td>
             <td class="text-center">${badge}</td>`;
@@ -441,23 +458,31 @@ function renderModbusRegisters(plant, liveData) {
 
 function buildPythonSnippet(plant, regs, baseAddr) {
     const lines = [
+        `import struct`,
         `from pymodbus.client import ModbusTcpClient`,
         ``,
         `# Plant: ${plant.name} (${plant.id})`,
+        `# All numeric values are IEEE 754 float32 packed in 2 consecutive u16 registers`,
+        `# (big-endian: high word first). Status is a single u16.`,
         `client = ModbusTcpClient('localhost', port=5020)`,
         `client.connect()`,
         ``,
-        `rr = client.read_holding_registers(${baseAddr}, ${regs.length}, unit=1)`,
-        `if not rr.isError():`,
+        `def read_float32(client, addr):`,
+        `    rr = client.read_holding_registers(addr, 2, unit=1)`,
+        `    if rr.isError(): return None`,
+        `    raw = (rr.registers[0] << 16) | rr.registers[1]`,
+        `    return struct.unpack('!f', struct.pack('!I', raw))[0]`,
+        ``,
     ];
     regs.forEach(reg => {
         const varName = detectVar(reg.description);
         const vi      = VAR_MAP[varName];
-        const offset  = reg.register_address - baseAddr;
-        if (vi.factor > 1) {
-            lines.push(`    ${varName.toLowerCase()} = rr.registers[${offset}] / ${vi.factor}  # ${vi.unit}`);
+        if (varName === 'Status') {
+            lines.push(`# Status`);
+            lines.push(`rr = client.read_holding_registers(${reg.register_address}, 1, unit=1)`);
+            lines.push(`status = rr.registers[0] if not rr.isError() else None  # 1=Running, 0=Stopped`);
         } else {
-            lines.push(`    ${varName.toLowerCase()} = rr.registers[${offset}]  # ${varName === 'Status' ? '1=Running, 0=Stopped' : vi.unit}`);
+            lines.push(`${varName.toLowerCase()} = read_float32(client, ${reg.register_address})  # ${vi.unit}`);
         }
     });
     lines.push(``, `client.close()`);

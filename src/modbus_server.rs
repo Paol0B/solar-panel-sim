@@ -18,10 +18,19 @@ pub enum VariableType {
     Status,
 }
 
+/// Encode a raw f32 value into two u16 big-endian words (IEEE 754).
+/// high = bits 31..16, low = bits 15..0
+fn float_to_words(v: f32) -> (u16, u16) {
+    let bits = v.to_bits();
+    ((bits >> 16) as u16, (bits & 0xFFFF) as u16)
+}
+
 struct MbService {
     state: AppState,
-    /// Map from register address to (plant_id, variable_type)
-    register_map: HashMap<u16, (String, VariableType)>,
+    /// Map from register address to (plant_id, variable_type, word_index)
+    /// word_index: 0 = high word (bits 31..16), 1 = low word (bits 15..0)
+    /// Status uses only word_index=0 and is stored as raw u16.
+    register_map: HashMap<u16, (String, VariableType, u8)>,
 }
 
 impl Service for MbService {
@@ -33,87 +42,49 @@ impl Service for MbService {
     fn call(&self, req: Self::Request) -> Self::Future {
         let state = self.state.clone();
         let register_map = self.register_map.clone();
-        
+
         Box::pin(async move {
+            // Shared helper: resolve a register address to a u16 value.
+            let resolve = |reg_addr: u16| -> u16 {
+                if let Some((plant_id, var_type, word_idx)) = register_map.get(&reg_addr) {
+                    if let Some(data) = state.get_data(plant_id) {
+                        let val = match var_type {
+                            VariableType::Status => {
+                                // Status: single u16, word_idx always 0
+                                data.status
+                            }
+                            _ => {
+                                // All numeric variables: IEEE 754 float32 split into 2 x u16
+                                let f = match var_type {
+                                    VariableType::Power       => data.power_kw as f32,
+                                    VariableType::Voltage     => data.voltage_v as f32,
+                                    VariableType::Current     => data.current_a as f32,
+                                    VariableType::Frequency   => data.frequency_hz as f32,
+                                    VariableType::Temperature => data.temperature_c as f32,
+                                    VariableType::Status      => unreachable!(),
+                                };
+                                let (high, low) = float_to_words(f);
+                                println!(
+                                    "[MODBUS] Plant:{} {:?} = {:.4} → IEEE754 hi=0x{:04X} lo=0x{:04X} (addr {})",
+                                    plant_id, var_type, f, high, low, reg_addr
+                                );
+                                if *word_idx == 0 { high } else { low }
+                            }
+                        };
+                        return val;
+                    }
+                }
+                0
+            };
+
             match req {
                 Request::ReadInputRegisters(addr, cnt) => {
-                    let mut registers = Vec::with_capacity(cnt as usize);
-                    for i in 0..cnt {
-                        let reg_addr = addr + i;
-                        let val = if let Some((plant_id, var_type)) = register_map.get(&reg_addr) {
-                            if let Some(data) = state.get_data(plant_id) {
-                                let scaled_val = match var_type {
-                                    // Power: scale x1 (integer kW) - supports up to 65.535 MW
-                                    VariableType::Power => (data.power_kw.max(0.0).round() as u32).min(65535),
-                                    // Voltage: scale x10 (deci-V) - supports up to 6553.5 V
-                                    VariableType::Voltage => ((data.voltage_v * 10.0).max(0.0).round() as u32).min(65535),
-                                    // Current: scale x10 (deci-A) - supports up to 6553.5 A
-                                    VariableType::Current => ((data.current_a * 10.0).max(0.0).round() as u32).min(65535),
-                                    // Frequency: scale x100 (centi-Hz) - supports up to 655.35 Hz
-                                    VariableType::Frequency => ((data.frequency_hz * 100.0).max(0.0).round() as u32).min(65535),
-                                    // Temperature: scale x10 (deci-C) - supports up to 6553.5 C
-                                    VariableType::Temperature => ((data.temperature_c * 10.0).max(0.0).round() as u32).min(65535),
-                                    VariableType::Status => data.status as u32,
-                                };
-                                if i == 0 {
-                                    println!("[MODBUS READ] Plant: {} | Var: {:?} | Raw: {:.2} | Scaled: {} | Addr: {}",
-                                             plant_id, var_type, 
-                                             match var_type {
-                                                 VariableType::Power => data.power_kw,
-                                                 VariableType::Voltage => data.voltage_v,
-                                                 VariableType::Current => data.current_a,
-                                                 VariableType::Frequency => data.frequency_hz,
-                                                 VariableType::Temperature => data.temperature_c,
-                                                 VariableType::Status => data.status as f64,
-                                             },
-                                             scaled_val, reg_addr);
-                                }
-                                scaled_val as u16
-                            } else {
-                                if i == 0 {
-                                    println!("[MODBUS READ] Addr: {} | No data for plant", reg_addr);
-                                }
-                                0
-                            }
-                        } else {
-                            if i == 0 {
-                                println!("[MODBUS READ] Addr: {} | Not mapped", reg_addr);
-                            }
-                            0
-                        };
-                        registers.push(val);
-                    }
-                    Ok(Response::ReadInputRegisters(registers))
+                    let regs: Vec<u16> = (0..cnt).map(|i| resolve(addr + i)).collect();
+                    Ok(Response::ReadInputRegisters(regs))
                 }
                 Request::ReadHoldingRegisters(addr, cnt) => {
-                     let mut registers = Vec::with_capacity(cnt as usize);
-                    for i in 0..cnt {
-                        let reg_addr = addr + i;
-                        let val = if let Some((plant_id, var_type)) = register_map.get(&reg_addr) {
-                            if let Some(data) = state.get_data(plant_id) {
-                                let scaled_val = match var_type {
-                                    // Power: scale x1 (integer kW) - supports up to 65.535 MW
-                                    VariableType::Power => (data.power_kw.max(0.0).round() as u32).min(65535),
-                                    // Voltage: scale x10 (deci-V) - supports up to 6553.5 V
-                                    VariableType::Voltage => ((data.voltage_v * 10.0).max(0.0).round() as u32).min(65535),
-                                    // Current: scale x10 (deci-A) - supports up to 6553.5 A
-                                    VariableType::Current => ((data.current_a * 10.0).max(0.0).round() as u32).min(65535),
-                                    // Frequency: scale x100 (centi-Hz) - supports up to 655.35 Hz
-                                    VariableType::Frequency => ((data.frequency_hz * 100.0).max(0.0).round() as u32).min(65535),
-                                    // Temperature: scale x10 (deci-C) - supports up to 6553.5 C
-                                    VariableType::Temperature => ((data.temperature_c * 10.0).max(0.0).round() as u32).min(65535),
-                                    VariableType::Status => data.status as u32,
-                                };
-                                scaled_val as u16
-                            } else {
-                                0
-                            }
-                        } else {
-                            0
-                        };
-                        registers.push(val);
-                    }
-                    Ok(Response::ReadHoldingRegisters(registers))
+                    let regs: Vec<u16> = (0..cnt).map(|i| resolve(addr + i)).collect();
+                    Ok(Response::ReadHoldingRegisters(regs))
                 }
                 _ => Err(ExceptionCode::IllegalFunction),
             }
@@ -121,7 +92,7 @@ impl Service for MbService {
     }
 }
 
-pub async fn run_server(addr: SocketAddr, state: AppState, register_map: HashMap<u16, (String, VariableType)>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(addr: SocketAddr, state: AppState, register_map: HashMap<u16, (String, VariableType, u8)>) -> Result<(), Box<dyn std::error::Error>> {
     println!("Modbus TCP server listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let server = tokio_modbus::server::tcp::Server::new(listener);

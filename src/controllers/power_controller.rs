@@ -90,48 +90,51 @@ pub async fn get_global_power(State(state): State<AppState>) -> impl IntoRespons
     )
 )]
 pub async fn get_modbus_info(State(config): State<Config>) -> impl IntoResponse {
+    // All numeric variables are encoded as IEEE 754 float32 split across
+    // TWO consecutive u16 registers (big-endian: high word first).
+    // Status uses a single u16 register (raw value, no encoding).
     let mut info = Vec::new();
     for p in &config.plants {
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.power_address,
-            length: 1,
-            data_type: "u16 (integer kW)".to_string(),
-            description: format!("Power output for {} in kW (max 65535 kW)", p.name),
+            length: 2,
+            data_type: "float32 IEEE 754 (2 regs)".to_string(),
+            description: format!("Power output for {} in kW — no upper limit", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.voltage_address,
-            length: 1,
-            data_type: "u16 (scaled * 10)".to_string(),
-            description: format!("Voltage for {} in deci-V (max 6553.5 V)", p.name),
+            length: 2,
+            data_type: "float32 IEEE 754 (2 regs)".to_string(),
+            description: format!("AC Voltage for {} in V", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.current_address,
-            length: 1,
-            data_type: "u16 (scaled * 10)".to_string(),
-            description: format!("Current for {} in deci-A (max 6553.5 A)", p.name),
+            length: 2,
+            data_type: "float32 IEEE 754 (2 regs)".to_string(),
+            description: format!("AC Current for {} in A", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.frequency_address,
-            length: 1,
-            data_type: "u16 (scaled * 100)".to_string(),
-            description: format!("Frequency for {} in centi-Hz", p.name),
+            length: 2,
+            data_type: "float32 IEEE 754 (2 regs)".to_string(),
+            description: format!("Grid frequency for {} in Hz", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.temperature_address,
-            length: 1,
-            data_type: "u16 (scaled * 10)".to_string(),
-            description: format!("Temperature for {} in deci-C", p.name),
+            length: 2,
+            data_type: "float32 IEEE 754 (2 regs)".to_string(),
+            description: format!("Panel cell temperature for {} in °C", p.name),
         });
         info.push(ModbusInfo {
             plant_id: p.id.clone(),
             register_address: p.modbus_mapping.status_address,
             length: 1,
-            data_type: "u16".to_string(),
+            data_type: "u16 (raw)".to_string(),
             description: format!("Status for {} (1=Running, 0=Stopped)", p.name),
         });
     }

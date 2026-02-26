@@ -339,18 +339,22 @@
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <div class="scada-card">
-                                <div class="scada-card-title"><i class="fas fa-ruler me-2 text-info"></i>Scaling Reference</div>
+                                <div class="scada-card-title"><i class="fas fa-microchip me-2 text-info"></i>Encoding — IEEE 754 float32</div>
                                 <table class="table table-sm scada-table mb-0 mt-2">
-                                    <thead><tr><th>Variable</th><th>Factor</th><th>Max u16</th></tr></thead>
+                                    <thead><tr><th>Variable</th><th>Registers</th><th>Encoding</th><th>Unit</th></tr></thead>
                                     <tbody>
-                                        <tr><td>Power</td><td class="font-monospace text-warning">÷1</td><td class="text-muted font-monospace">65,535 kW</td></tr>
-                                        <tr><td>Voltage</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 V</td></tr>
-                                        <tr><td>Current</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 A</td></tr>
-                                        <tr><td>Frequency</td><td class="font-monospace text-info">÷100</td><td class="text-muted font-monospace">655.35 Hz</td></tr>
-                                        <tr><td>Temperature</td><td class="font-monospace text-info">÷10</td><td class="text-muted font-monospace">6,553.5 °C</td></tr>
-                                        <tr><td>Status</td><td class="font-monospace text-secondary">none</td><td class="text-muted font-monospace">0 / 1</td></tr>
+                                        <tr><td>Power</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">kW</td></tr>
+                                        <tr><td>Voltage</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">V</td></tr>
+                                        <tr><td>Current</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">A</td></tr>
+                                        <tr><td>Frequency</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">Hz</td></tr>
+                                        <tr><td>Temperature</td><td class="font-monospace text-warning">addr, addr+1</td><td class="text-muted font-monospace">IEEE 754 f32</td><td class="text-muted">°C</td></tr>
+                                        <tr><td>Status</td><td class="font-monospace text-secondary">addr</td><td class="text-muted font-monospace">u16 raw</td><td class="text-muted">—</td></tr>
                                     </tbody>
                                 </table>
+                                <p class="text-muted small mt-2 mb-0">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Decode: <code class="text-info">raw = (hi &lt;&lt; 16) | lo &nbsp;→&nbsp; struct.unpack('!f', struct.pack('!I', raw))[0]</code>
+                                </p>
                             </div>
                         </div>
                         <div class="col-md-6">
