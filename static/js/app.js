@@ -3,6 +3,7 @@
 // ============================================================
 
 // ---- State ----
+let systemConfig       = { api_port: 3000, modbus_port: 5020, modbus_host: '0.0.0.0' };
 let plants             = [];
 let currentPlantId     = null;
 let currentPlantTimezone = 'UTC';
@@ -15,12 +16,14 @@ let modbusInfo         = [];
 let chartData          = [];   // { time, kw }[]
 
 // ---- Bootstrap ----
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await fetchSystemConfig();  // FIRST: Load configuration
     initMap();
     initChart();
     fetchModbusInfo();
     fetchPlants();
     startClock();
+    updatePortDisplays();  // Update displayed ports after config is loaded
 
     document.getElementById('plant-search').addEventListener('input', filterPlantList);
     document.querySelectorAll('.detail-tab').forEach(btn => {
@@ -124,6 +127,40 @@ function updateChart(kw, timeLabel) {
     document.getElementById('chart-peak').innerText    = `${peak.toFixed(2)} kW`;
     document.getElementById('chart-avg').innerText     = `${avg.toFixed(2)} kW`;
     document.getElementById('chart-samples').innerText = chartData.length;
+}
+
+// ============================================================
+//  SYSTEM CONFIGURATION
+// ============================================================
+async function fetchSystemConfig() {
+    try {
+        const res = await fetch('/api/system/config');
+        systemConfig = await res.json();
+        console.log('[CONFIG] Loaded system configuration:', systemConfig);
+    } catch (e) {
+        console.error('fetchSystemConfig:', e);
+        // Keep defaults if fetch fails
+    }
+}
+
+function updatePortDisplays() {
+    // Update navbar Modbus port display
+    const navModbusPort = document.getElementById('nav-modbus-port');
+    if (navModbusPort) {
+        navModbusPort.textContent = `:${systemConfig.modbus_port}`;
+    }
+    
+    // Update navbar API port display
+    const navApiPort = document.getElementById('nav-api-port');
+    if (navApiPort) {
+        navApiPort.textContent = `:${systemConfig.api_port}`;
+    }
+    
+    // Update Modbus address display in detail view
+    const mbAddrEl = document.getElementById('mb-addr');
+    if (mbAddrEl) {
+        mbAddrEl.textContent = `${systemConfig.modbus_host}:${systemConfig.modbus_port}`;
+    }
 }
 
 // ============================================================
@@ -464,7 +501,7 @@ function buildPythonSnippet(plant, regs, baseAddr) {
         `# Plant: ${plant.name} (${plant.id})`,
         `# All numeric values are IEEE 754 float32 packed in 2 consecutive u16 registers`,
         `# (big-endian: high word first). Status is a single u16.`,
-        `client = ModbusTcpClient('localhost', port=5020)`,
+        `client = ModbusTcpClient('localhost', port=${systemConfig.modbus_port})`,
         `client.connect()`,
         ``,
         `def read_float32(client, addr):`,

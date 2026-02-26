@@ -85,3 +85,10 @@ pub struct ModbusInfo {
     pub data_type: String,
     pub description: String,
 }
+/// Public system configuration (what the frontend needs to know)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SystemConfig {
+    pub api_port: u16,
+    pub modbus_port: u16,
+    pub modbus_host: String,
+}

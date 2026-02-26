@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::config::{Config, PlantConfig};
-use crate::models::power::{ModbusInfo, PlantStatusResponse};
+use crate::models::power::{ModbusInfo, PlantStatusResponse, SystemConfig};
 use crate::shared_state::AppState;
 
 /// GET /api/plants
@@ -140,6 +140,26 @@ pub async fn get_modbus_info(State(config): State<Config>) -> impl IntoResponse 
         });
     }
     Json(info).into_response()
+}
+
+// ─── System Configuration ───────────────────────────────────────────────
+
+/// GET /api/system/config
+/// Returns public system configuration (ports, hosts)
+#[utoipa::path(
+    get,
+    path = "/api/system/config",
+    responses(
+        (status = 200, description = "Public system configuration", body = SystemConfig)
+    )
+)]
+pub async fn get_system_config(State(config): State<Config>) -> impl IntoResponse {
+    let system_config = SystemConfig {
+        api_port: config.server.port,
+        modbus_port: config.modbus.port,
+        modbus_host: "0.0.0.0".to_string(),
+    };
+    Json(system_config).into_response()
 }
 
 // ─── Settings: Offline Mode ───────────────────────────────────────────────────
